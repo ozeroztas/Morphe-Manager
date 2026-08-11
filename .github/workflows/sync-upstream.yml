@@ -1,7 +1,11 @@
-name: Sync Morphe upstream
+name: Sync upstream
 
 on:
   workflow_dispatch:
+
+  schedule:
+    - cron: "17 5 * * *"
+      timezone: "Europe/Istanbul"
 
 permissions:
   contents: write
@@ -11,12 +15,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: main
 
-      - name: Sync upstream
+      - name: Sync Morphe Manager
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -25,5 +30,6 @@ jobs:
           git fetch upstream --tags
 
           git merge upstream/main --no-edit
+
           git push origin main
           git push origin --tags
