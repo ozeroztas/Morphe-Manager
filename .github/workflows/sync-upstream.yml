@@ -1,0 +1,29 @@
+name: Sync Morphe upstream
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync upstream
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream https://github.com/MorpheApp/morphe-manager.git
+          git fetch upstream --tags
+
+          git merge upstream/main --no-edit
+          git push origin main
+          git push origin --tags
