@@ -16,8 +16,11 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
 
       - name: Sync Morphe Manager
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -34,7 +37,6 @@ jobs:
           fi
 
           git fetch upstream main --tags --force
-
           git merge upstream/main --no-edit -X theirs
 
           git checkout ORIG_HEAD -- \
@@ -44,26 +46,20 @@ jobs:
 
           if ! git diff --cached --quiet; then
             git commit --no-edit -m "Sync upstream"
-            git push origin main
+            if [[ -n "${SYNC_TOKEN:-}" ]]; then
+              git push "https://x-access-token:${SYNC_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" main
+            else
+              git push origin main
+            fi
           fi
 
           echo "Pushing upstream tags..."
-          blocked_tags=()
 
-          while IFS= read -r tag; do
-            if git show-ref --tags --verify --quiet "refs/tags/$tag"; then
-              if ! git push origin "refs/tags/$tag:refs/tags/$tag"; then
-                echo "WARNING: Could not push tag $tag. GitHub may require workflow permission because this tag contains workflow changes."
-                blocked_tags+=("$tag")
-              fi
-            fi
-          done < <(git for-each-ref --format='%(refname:strip=2)' refs/tags)
-
-          if ((${#blocked_tags[@]})); then
-            echo "The following upstream tags could not be pushed with GITHUB_TOKEN:"
-            printf ' - %s\n' "${blocked_tags[@]}"
-            echo "Main synchronization completed successfully."
-            echo "A token with workflow permission is required to publish these exact tags."
+          if [[ -n "${SYNC_TOKEN:-}" ]]; then
+            git remote set-url origin "https://x-access-token:${SYNC_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           else
-            echo "All upstream tags synchronized successfully."
+            echo "SYNC_TOKEN is not configured; using GITHUB_TOKEN. Tags containing workflow changes may be rejected."
           fi
+
+          git push origin --tags --force
+          echo "Main and upstream tags synchronized successfully."
