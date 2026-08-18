@@ -24,6 +24,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          git fetch origin main --tags --force
+          git reset --hard origin/main
+
           if git remote get-url upstream >/dev/null 2>&1; then
             git remote set-url upstream https://github.com/MorpheApp/morphe-manager.git
           else
@@ -38,7 +41,10 @@ jobs:
             .github/workflows/sync-upstream.yml \
             .github/workflows/crowdin_pull.yml
           git add .github/workflows/sync-upstream.yml .github/workflows/crowdin_pull.yml
-          git commit --amend --no-edit
 
-          git push origin main
+          if ! git diff --cached --quiet; then
+            git commit --no-edit -m "Sync upstream"
+            git push origin main
+          fi
+
           git push origin --tags
