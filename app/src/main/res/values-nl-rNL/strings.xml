@@ -2,16 +2,23 @@
 <resources>
     <!-- Home Screen -->
     <string name="home_other_apps">Andere apps</string>
+    <string name="home_other_apps_action">Andere apps selecteren</string>
     <string name="home_not_patched_yet">Nog niet gepatcht</string>
+    <string name="home_unpatched_version_installed">Ongepatchte versie geïnstalleerd</string>
+    <string name="home_unpatched_badge">Ongepatcht</string>
     <string name="home_no_patches_available">Geen patches beschikbaar</string>
     <string name="home_app_hide_title">Deze app verbergen?</string>
-    <string name="home_app_hide_message">Deze app wordt verborgen op het startscherm. Je kunt hem later weer zichtbaar maken met de knop \'\' onderaan de lijst.</string>
+    <string name="home_app_hide_message">Deze app zal worden verborgen op het startscherm. Je kunt hem later weer zichtbaar maken met de knop onderaan de lijst.</string>
     <string name="home_app_will_be_hidden">Deze app wordt verborgen</string>
     <string name="home_app_no_hidden">Geen verborgen apps</string>
     <string name="home_app_hidden_apps_title">Verborgen apps</string>
-    <string name="home_app_hidden_apps_hint">Tik om te tonen</string>
+    <string name="home_app_hidden_apps_hint">Tik om terug te brengen</string>
+    <string name="home_app_patch_sources_description">Niet aangevinkte bronnen worden niet aangeboden bij het patchen van deze apps, en hun patches worden nooit uit zichzelf aan een selectie toegevoegd. Elke bron blijft voor elke andere app aangevinkt.</string>
+    <string name="home_app_patch_sources_mixed">Aangeboden aan %1$s van %2$s</string>
+    <string name="home_app_patch_sources_covers">Heeft patches voor %1$s van %2$s</string>
+    <string name="home_app_patch_sources_last">Elke app moet één bron overhouden om uit te patchen.</string>
     <string name="android_11_bug_dialog_title">Android 11-bug</string>
-    <string name="android_11_bug_dialog_description">De toestemming voor het installeren van de app moet vooraf worden verleend om een bug in Android 11 te voorkomen die de gebruikerservaring negatief zou beïnvloeden</string>
+    <string name="android_11_bug_dialog_description">De toestemming voor het installeren van de app moet vooraf worden verleend om een bug in Android 11 te voorkomen die de gebruikerservaring negatief zal beïnvloeden</string>
     <string name="deep_link_add_source_title">Bron toevoegen</string>
     <string name="deep_link_add_source_message">Wilt u deze patchbron toevoegen aan Morphe?</string>
     <string name="deep_link_add_source_warning">Voeg alleen bronnen toe die u vertrouwt</string>
@@ -24,31 +31,48 @@
     <string name="home_metadata_errors_subtitle">Tik om bronnen te bekijken</string>
     <string name="home_outdated_manager_title">Morphe is verouderd</string>
     <string name="home_outdated_manager_subtitle">Sommige patchbronnen vereisen een nieuwere versie</string>
+    <string name="home_held_back_title">Een patchbron heeft Morphe laten crashen.}</string>
+    <string name="home_held_back_subtitle">Empty</string>
     <string name="home_metered_skipped_title">Updates gepauzeerd op mobiele data</string>
     <string name="home_metered_skipped_subtitle">Tik om updates via mobiele data toe te staan</string>
+    <string name="home_repatch_available_subtitle">Tik om ze allemaal in de wachtrij te zetten</string>
     <string name="home_update_error">Update mislukt</string>
     <string name="home_update_error_subtitle">Er is iets misgegaan tijdens het bijwerken van bronnen</string>
     <string name="home_update_skipped_metered">Updates overgeslagen</string>
     <string name="home_update_skipped_metered_subtitle">Mobiele gegevens zijn actief</string>
-    <string name="home_updating_sources">Bronnen worden geüpdatet…</string>
-    <string name="home_update_progress_format">%s verwerkt</string>
-    <string name="home_update_success">Bronnen geüpdatet</string>
+    <string name="home_updating_sources">Bronnen worden bijgewerkt…</string>
+    <!-- Download progress across several bundles. "%1$d" and "%2$d" count the bundles, "%3$s" and
+         "%4$s" are the megabytes read and expected, "%5$d" is the percentage. -->
+    <string name="home_update_bundle_count_with_bytes">%1$d / %2$d  ·  %3$s / %4$s MB (%5$d%%)</string>
+    <string name="home_update_success">Bronnen zijn bijgewerkt</string>
     <string name="home_update_success_subtitle">Uw bronnen zijn up-to-date</string>
-    <string name="home_sources_are_loading">Bronnen worden geladen, even geduld…</string>
+    <string name="home_sources_are_loading">Bronnen worden ingeladen, even geduld…</string>
     <string name="home_search_apps">Apps zoeken</string>
-    <string name="home_app_sort_title">Sorteer apps</string>
+    <string name="home_app_list_options_title">Sorteren en filteren</string>
+    <string name="home_app_list_options_state_description">Gesorteerd op %1$s, gefilterd op %2$s</string>
+    <string name="home_app_filter_all_description">Elke app op het startscherm</string>
+    <string name="home_app_filter_patched_description">Apps die je met Morphe hebt gepatcht of opgeslagen</string>
+    <string name="home_app_filter_not_patched_description">Apps die je nog niet in Morphe hebt gepatcht</string>
+    <string name="home_app_filter_installed_description">Apps die momenteel op dit apparaat zijn geïnstalleerd</string>
+    <string name="home_app_filter_uninstalled_description">Apps die met Morphe zijn gepatcht en niet meer op dit apparaat staan</string>
+    <string name="home_app_filter_clones">Klonen</string>
+    <string name="home_app_filter_clones_description">Apps die onder een eigen pakketnaam zijn gebouwd en naast het origineel zijn geïnstalleerd</string>
     <string name="home_app_sort_manual_description">Houd een app ingedrukt en tik vervolgens op de herordenen-knop</string>
     <string name="home_app_sort_recommended">Aanbevolen volgorde</string>
     <string name="home_app_sort_recommended_description">Geïnstalleerde en vastgezette apps eerst</string>
     <string name="home_app_sort_name_asc_description">Alfabetisch, A tot Z</string>
     <string name="home_app_sort_name_desc_description">Omgekeerd alfabetisch, Z tot A</string>
     <string name="home_app_sort_updates_first">Eerst patches bijwerken</string>
-    <string name="home_app_sort_updates_first_description">Apps met update-badges eerst, daarna in aanbevolen volgorde</string>
+    <string name="home_app_sort_updates_first_description">Apps met nieuwere patches eerst, daarna de aanbevolen volgorde</string>
+    <string name="home_app_sort_recently_patched">Recent gepatcht</string>
+    <string name="home_app_sort_recently_patched_description">Meest recent gepatchte apps eerst</string>
     <string name="home_no_apps_title">Geen apps beschikbaar</string>
     <string name="home_no_apps_subtitle">Voeg een patchbron toe of schakel een bestaande in %s</string>
     <string name="home_no_apps_search_subtitle">Er zijn geen apps die overeenkomen met \"%s\"</string>
     <string name="home_all_apps_hidden_title">Alle apps zijn verborgen</string>
     <string name="home_all_apps_hidden_subtitle">U heeft alle apps van het startscherm verborgen</string>
+    <string name="home_no_apps_filter_title">Geen apps voldoen aan dit filter</string>
+    <string name="home_no_apps_filter_subtitle">Niets kwam overeen met %s</string>
     <string name="home_category_add">Categorie toevoegen</string>
     <string name="home_category_all_apps">Alle apps</string>
     <string name="home_category_custom">Aangepast</string>
@@ -74,7 +98,7 @@
     <!-- Friendly, slightly mischievous joke about controlling app behavior -->
     <string name="home_greeting_6">Laten we ervoor zorgen dat uw apps zich goed gedragen</string>
     <!-- Whimsical forecast-style joke, not meant literally -->
-    <string name="home_greeting_7" formatted="false">De voorspelling voor vandaag: 100% kans op reparaties</string>
+    <string name="home_greeting_7" formatted="false">De voorspelling voor vandaag: 100% kans op patchen</string>
     <!-- From mediocrity to amazing -->
     <string name="home_greeting_8">Ben je klaar om van een teleurstellende ervaring iets geweldigs te maken?</string>
     <!-- Playful exaggeration, making patching feel heroic -->
@@ -86,10 +110,10 @@
     <string name="home_greeting_morning_2">Goedemorgen! Apps patchen zichzelf niet</string>
     <!-- Afternoon greetings (12:00–16:59) -->
     <string name="home_greeting_afternoon_1">Middagdipje? Patch iets</string>
-    <string name="home_greeting_afternoon_2">Patching na de lunch is anders</string>
+    <string name="home_greeting_afternoon_2">Patchen na de lunch raakt anders</string>
     <string name="home_greeting_afternoon_3">De middagdienst: patch-editie</string>
     <!-- Evening greetings (17:00–21:59) -->
-    <string name="home_greeting_evening_1">Goede avond! Avondpatches zijn anders</string>
+    <string name="home_greeting_evening_1">Goede avond! Avondpatches raken anders</string>
     <string name="home_greeting_evening_2">Even tot rust komen? Patch eerst een app</string>
     <string name="home_greeting_evening_3">Klok je uit? Patch eerst iets</string>
     <!-- Late night greetings (22:00–23:59) -->
@@ -104,6 +128,7 @@
     <string name="home_greeting_super_late_5">Nachtelijk en productief</string>
     <!-- Home Screen - Sources Management -->
     <string name="sources_management_title">Patchbronnen</string>
+    <string name="sources_search">Zoek bronnen en patches</string>
     <string name="sources_sort_title">Patchbronnen sorteren</string>
     <string name="sources_sort_manual">Handmatige volgorde</string>
     <string name="sources_sort_manual_hint">Houd een bron ingedrukt om de volgorde te wijzigen</string>
@@ -111,12 +136,21 @@
     <string name="sources_sort_last_updated_description">Nieuwste bronupdates eerst</string>
     <string name="sources_sort_enabled_first">Eerst ingeschakeld</string>
     <string name="sources_sort_enabled_first_description">Toon actieve bronnen voor uitgeschakelde bronnen</string>
+    <string name="sources_patches_source_disabled_hint">Deze bron is uitgeschakeld. De patches ervan worden ter referentie weergegeven en worden niet toegepast.</string>
     <string name="sources_management_open_in_browser">Openen in browser</string>
+    <string name="sources_management_report_issue">Een probleem melden</string>
     <string name="sources_management_failed_to_open_url">Kan URL niet openen</string>
+    <string name="sources_hidden_apps">Verborgen voor</string>
+    <string name="sources_hidden_apps_title">Apps verborgen voor %1$s</string>
+    <string name="sources_hidden_apps_description">Voor deze apps wordt deze bron niet aangeboden wanneer ze worden gepatcht. De bron zelf blijft voor al het andere ingeschakeld</string>
+    <string name="sources_hidden_apps_hint">Tik om deze bron opnieuw aan te bieden</string>
     <string name="sources_management_prerelease_toggle">Patches van vóór de release</string>
     <string name="sources_management_prerelease_toggle_description">Krijg vroegtijdige toegang tot nieuwe experimentele patchversies</string>
+    <string name="sources_prerelease_warning_title">Pre-release patches inschakelen?</string>
+    <string name="sources_prerelease_warning_message">Pre-release builds zijn nog in ontwikkeling. Patches kunnen falen of de app breken, en functies kunnen zonder waarschuwing veranderen.</string>
+    <string name="expert_mode_prerelease_notice">Deze bron heeft pre-release patches. Patchen kan falen of onverwacht gedrag vertonen.</string>
     <string name="sources_management_experimental_versions_toggle">Experimentele app-versies</string>
-    <string name="sources_management_experimental_versions_toggle_description">Patches experimentele app targets indien beschikbaar</string>
+    <string name="sources_management_experimental_versions_toggle_description">Toont en patcht experimentele app-targets</string>
     <string name="sources_management_already_exists">Deze bron is al toegevoegd</string>
     <string name="sources_management_invalid_url">Ongeldige bron-URL. Controleer het adres en probeer het opnieuw</string>
     <string name="sources_management_blocked">Deze patchbron is geblokkeerd en kan niet worden toegevoegd</string>
@@ -126,6 +160,8 @@
     <string name="sources_management_metadata_unavailable_hint_missing">De patch-bundel kon niet worden gedownload. De bron-URL is mogelijk onjuist of het bestand bestaat niet</string>
     <string name="sources_management_outdated_manager_badge">Update Morphe</string>
     <string name="sources_management_outdated_manager_hint">Deze bron is gebouwd voor patcher %1$s, maar Morphe %2$s bevat patcher %3$s. Update Morphe om deze te gebruiken</string>
+    <string name="sources_management_held_back_badge">Gecrasht</string>
+    <string name="sources_management_held_back_hint">Deze bron heeft Morphe laten crashen tijdens het laden en wordt daarom overgeslagen. Werk deze bij of importeer deze opnieuw om het opnieuw te proberen.</string>
     <string name="sources_management_source_enabled">Bron ingeschakeld</string>
     <string name="sources_management_source_disabled">Bron uitgeschakeld</string>
     <string name="sources_management_source_updating">Bron bijwerken</string>
@@ -150,6 +186,12 @@
     <string name="sources_dialog_url_invalid">De URL moet verwijzen naar een GitHub/GitLab-repo of een .json-bestand</string>
     <string name="sources_dialog_local_change_file">Bestand wijzigen</string>
     <string name="sources_dialog_preinstalled">Voorgeïnstalleerd</string>
+    <string name="sources_dialog_community">Community-patches</string>
+    <!-- Shown before leaving Morphe for the community patches website. The sources listed there are not reviewed by Morphe -->
+    <string name="sources_dialog_community_notice_title">Bronnen voor patches van derden</string>
+    <string name="sources_dialog_community_notice_message">"Community-patchbronnen worden gemaakt en onderhouden door hun eigen auteurs. Morphe beoordeelt of verifieert patches van derden niet en is niet verantwoordelijk voor hun inhoud of voor wat ze op uw apparaat doen.
+
+Alles wat u van deze website toevoegt, gebruikt u op eigen risico"</string>
     <string name="sources_update_success">Bijwerken geslaagd</string>
     <string name="sources_update_unavailable">Geen bijwerken beschikbaar</string>
     <string name="sources_download_fail">Kan bronnen niet downloaden: %s</string>
@@ -164,6 +206,7 @@
     <string name="home_apk_availability_recommended_label">Aanbevolen</string>
     <string name="home_apk_availability_unpatched_label">Ongepatcht</string>
     <string name="home_apk_availability_incompatible_label">Incompatibel</string>
+    <string name="home_apk_availability_installed_version">Geïnstalleerd op dit apparaat: %s</string>
     <string name="home_apk_availability_yes">Ja, help me een APK te vinden</string>
     <string name="home_apk_availability_no">Nee, ik heb al een .APK</string>
     <string name="home_apk_helper_download">Gebruik een hulpprogramma</string>
@@ -174,9 +217,17 @@
     <string name="home_apk_helper_warning_unverified">Ga alleen verder als u deze hulpprogramma-app vertrouwt. Morphe kan de handtekening van deze APK niet verifiëren, dus een gewijzigd bestand zou niet worden gedetecteerd.</string>
     <string name="home_apk_helper_no_result">De hulpprogramma-app heeft geen APK geretourneerd.</string>
     <string name="home_apk_helper_no_access">De hulpprogramma-app heeft geen toegang verleend tot de geretourneerde APK.</string>
+    <string name="home_apk_helper_no_package">De helper-app heeft niet aangegeven welke geïnstalleerde app gebruikt moet worden</string>
+    <string name="home_apk_helper_wrong_package">De helper-app retourneerde een andere app dan degene die wordt gepatcht</string>
+    <string name="home_apk_helper_installed_unavailable">Morphe kon de geïnstalleerde app niet gebruiken</string>
+    <string name="home_apk_helper_installed_incompatible">De geïnstalleerde versie kan niet worden gepatcht</string>
     <string name="home_apk_use_saved">Gebruik opgeslagen APK</string>
     <string name="home_apk_use_installed">Gebruik geïnstalleerde APK</string>
+    <string name="home_apk_use_saved_unsupported">De patches ondersteunen deze opgeslagen kopie niet. Het patchen ervan zal je vragen om te bevestigen, of kies een andere APK</string>
     <string name="home_apk_use_installed_unverified">Kon de handtekening van de geïnstalleerde app niet verifiëren, dus deze is mogelijk al gepatcht</string>
+    <string name="home_unverified">Ongeverifieerd</string>
+    <string name="home_install_verification_pending">Installatie controleren…</string>
+    <string name="home_app_info_install_unverified">Morphe kan niet bevestigen dat de geïnstalleerde app de build is die is gepatcht. Patch deze opnieuw of installeer deze opnieuw vanuit de opgeslagen APK om de acties te herstellen</string>
     <string name="home_app_info_no_saved_apk">Er is geen APK opgeslagen. Om de patch uit te voeren, moet u het APK opnieuw selecteren</string>
     <string name="home_version_requires_android">Vereist Android %s+</string>
     <string name="home_apk_no_compatible_versions_title">Niet ondersteund voor dit apparaat</string>
@@ -184,11 +235,18 @@
     <!-- Home Screen - Dialog 2: Download Instructions -->
     <string name="home_download_instructions_title">Download de originele .APK-bestand</string>
     <string name="home_download_instructions_steps_title">Instructies:</string>
+    <string name="home_download_instructions_finding">De downloadpagina zoeken…</string>
     <string name="home_download_instructions_step1">Druk op de \'%s\' knop hieronder</string>
     <string name="home_download_instructions_step2_part1">Scroll naar beneden op de webpagina en druk op</string>
+    <string name="home_download_instructions_step2_generic">Scroll omlaag op de webpagina en druk op de downloadknop</string>
+    <string name="home_download_instructions_step2_variant">Scroll omlaag op de webpagina en druk op de downloadknop van de bovenste &lt;b&gt;APK-variant&lt;/b&gt;</string>
+    <string name="home_download_instructions_step2_search">Open een zoekresultaat van een website die je vertrouwt</string>
+    <string name="home_download_instructions_step2_search_note">Morphe kan niet voor deze websites instaan. Sla de websites over die een eigen appwinkel aanbieden in plaats van een APK-bestand</string>
+    <string name="home_download_instructions_step3_search">Download op die website de APK van versie &lt;b&gt;%s&lt;/b&gt;, niet de nieuwste</string>
+    <string name="home_download_instructions_step3_search_any">Download op die website de APK van de app. &lt;b&gt;Elke versie&lt;/b&gt; kan worden gepatcht</string>
     <string name="home_download_instructions_download_button_toast">Druk op de download op de website, en niet hier 😊</string>
     <string name="home_download_instructions_download_button_toast_2">Geweldig! Klik nu op doorgaan en ga naar de website 👆</string>
-    <string name="home_download_instructions_download_button_toast_3">Oefening baart kunst en je bent op de goede weg 💪</string>
+    <string name="home_download_instructions_download_button_toast_3">Oefening baart kunst en jij bent zeker op het goede pad 💪</string>
     <string name="home_download_instructions_download_button_toast_4">Nog steeds niet hier… nog steeds niet hier… 🙈</string>
     <string name="home_download_instructions_download_button_toast_5">OK, ik respecteer de toewijding 🫡</string>
     <string name="home_download_instructions_download_button_toast_6">Je bent nu een officiële Morphe knop tester 🏅</string>
@@ -196,7 +254,8 @@
     <string name="home_download_instructions_step3_mount">Wacht tot de download is voltooid, en &lt;b&gt;installeer de APK&lt;/b&gt;</string>
     <string name="home_download_instructions_step4">Na het downloaden, ga terug naar Morphe</string>
     <string name="home_download_instructions_step4_mount">Na het installeren van het oorspronkelijke APK, ga terug naar Morphe</string>
-    <string name="home_download_instructions_continue">Doorgaan naar APKMirror.com</string>
+    <string name="home_download_instructions_continue_to">Ga verder naar %s</string>
+    <string name="home_download_instructions_destination">de downloadpagina</string>
     <!-- Home Screen - Dialog 3: File Picker Prompt -->
     <string name="home_file_picker_prompt_title">Selecteer gedownloade APK</string>
     <string name="home_file_picker_prompt_description">Selecteer het &lt;b&gt;%s&lt;/b&gt; APK bestand dat u net gedownload hebt</string>
@@ -206,7 +265,7 @@
     <string name="home_select_apk_title">Selecteer APK</string>
     <string name="home_select_any_apk_description">Selecteer een APK-bestand van een app, of kies een app die al op dit apparaat is geïnstalleerd</string>
     <string name="home_use_installed_app">Geïnstalleerde app gebruiken</string>
-    <string name="home_installed_app_picker_title">Geïnstalleerde app selecteren</string>
+    <string name="home_installed_app_picker_title">Geïnstalleerde apps</string>
     <string name="home_installed_app_picker_empty">Geen apps gevonden</string>
     <string name="home_installed_app_picker_filter_all">Alle apps</string>
     <string name="home_installed_app_picker_filter_user">Alleen gebruikersapps</string>
@@ -223,6 +282,9 @@
     <string name="expert_mode_disable_all_done">Alle patches uitgeschakeld</string>
     <string name="expert_mode_enable_all">Alles inschakelen</string>
     <string name="expert_mode_enable_all_done">Alle patches ingeschakeld</string>
+    <string name="expert_mode_enable_all_universal_pending">Tik opnieuw voor universele patches</string>
+    <string name="expert_mode_universal_all_warning_title">Alle universele patches inschakelen?</string>
+    <string name="expert_mode_universal_all_warning_message">Universele patches zijn niet samen getest. Ze allemaal tegelijk inschakelen kan conflicten, mislukte patching of crashes veroorzaken.</string>
     <string name="expert_mode_reset_to_default">Aanbevolen patches inschakelen</string>
     <string name="expert_mode_reset_to_default_done">Aanbevolen patches toegepast</string>
     <string name="expert_mode_restore_saved">Selectie opslaan herstellen</string>
@@ -230,8 +292,11 @@
     <string name="expert_mode_copy_from_bundle">Selectie kopiëren vanuit een andere bundel</string>
     <string name="expert_mode_copy_from_bundle_no_patches">Geen bijpassende patches in deze bundel</string>
     <string name="expert_mode_no_results">Geen patches gevonden</string>
+    <string name="expert_mode_selected_only_on">Alleen geselecteerde patches weergeven</string>
+    <string name="expert_mode_selected_only_off">Alle patches weergeven</string>
     <string name="expert_mode_universal_patches">Universele patches</string>
     <string name="expert_mode_new_patches">Nieuw</string>
+    <string name="expert_mode_options_customized">Aangepast</string>
     <string name="expert_mode_patch_required_by_installer">Vereist voor het geselecteerde installatiedoel</string>
     <string name="expert_mode_patch_unavailable_for_installer">Niet beschikbaar voor het geselecteerde installatiedoel</string>
     <string name="expert_mode_multiple_sources_warning_title">Meerdere patch-bronnen geselecteerd</string>
@@ -264,26 +329,29 @@ Voor de beste resultaten beveelt deze app aan om een &lt;b&gt;volledig APK&lt;/b
     <string name="home_dialog_wrong_package_description">Het geselecteerde APK-bestand is niet geschikt voor de applicatie die u wilde patchen</string>
     <string name="home_dialog_expected_package">Verwacht pakket:</string>
     <string name="home_dialog_selected_package">Geselecteerd pakket:</string>
-    <string name="home_dialog_orphaned_install_title">Vorige kopie achtergelaten</string>
-    <string name="home_dialog_orphaned_install_description">Patchen heeft de pakketnaam gewijzigd, dus de kopie die u eerder heeft gepatcht, is nog steeds geïnstalleerd als een afzonderlijke app</string>
-    <string name="home_dialog_orphaned_install_warning">Deze wordt niet langer gevolgd en ontvangt geen patch-updates</string>
-    <string name="home_dialog_orphaned_install_uninstall">Verwijder deze</string>
-    <string name="home_dialog_orphaned_install_keep">Behouden</string>
     <string name="home_outdated_patches_dialog_title">Patches kunnen verouderd zijn</string>
     <string name="home_outdated_patches_dialog_message">Mobiele data is actief en patch-updates zijn uitgeschakeld</string>
     <string name="home_outdated_patches_dialog_warning">Het installeren van verouderde patches kan ertoe leiden dat de app niet meer werkt</string>
     <string name="home_outdated_patches_dialog_update_and_patch">Update &amp; patch</string>
     <string name="home_low_disk_space_dialog_title">Weinig schijfruimte</string>
-    <string name="home_low_disk_space_dialog_message">Slechts %1$.2f GB vrije opslagruimte beschikbaar. Patching vereist minimaal %2$.2f GB vrije ruimte om correct te werken</string>
+    <!-- "%1$s" is the free storage and "%2$s" the amount patching needs, both in gigabytes. -->
+    <string name="home_low_disk_space_dialog_message">Er is slechts %1$s GB vrije opslagruimte beschikbaar. Voor het patchen is minimaal %2$s GB vrije ruimte nodig om correct te werken.</string>
     <string name="home_low_disk_space_dialog_warning">Doorgaan kan resulteren in een foutmelding \'bestand niet gevonden\' of een beschadigd output APK-bestand</string>
     <string name="home_simple_bundle_select_title">Selecteer een .mpp-bronbestand van de opslag</string>
-    <!-- Patch Options -->
+    <string name="home_simple_bundle_select_remember">Gebruik deze bron altijd voor deze app</string>
+    <!-- Color picker -->
     <string name="custom_color">Aangepaste kleur</string>
     <string name="hex_color">Hex-kleur</string>
+    <string name="color_picker_shade">Verzadiging en helderheid</string>
+    <string name="color_picker_hue">Tint</string>
+    <!-- Patch Options -->
     <string name="patch_option_instructions">Instructies</string>
     <string name="patch_option_enter_value">Waarde invoeren</string>
     <string name="patch_option_enter_number">Getal invoeren</string>
     <string name="patch_option_enter_decimal">Decimaal invoeren</string>
+    <string name="patch_option_slider_edit">Voer een exacte waarde in</string>
+    <string name="patch_option_slider_range_start">Van</string>
+    <string name="patch_option_slider_range_end">Tot</string>
     <string name="patch_option_list_duplicate">Deze waarde bestaat al</string>
     <string name="patch_option_list_empty">Waarde mag niet leeg zijn</string>
     <string name="patch_option_list_empty_state">Nog geen waarden toegevoegd</string>
@@ -344,6 +412,7 @@ Buitenste zone (gestippeld): kan worden afgesneden door het launcher-masker - ho
     <string name="batch_patch_source_unavailable">De APK kon niet worden voorbereid</string>
     <string name="batch_patch_force_version">Toch patchen</string>
     <string name="batch_patch_force_version_done">Toch in de wachtrij geplaatst, patches voor andere versies kunnen de app beschadigen</string>
+    <string name="batch_patch_accept_signature_done">Toch in wachtrij geplaatst, deze APK is mogelijk niet het origineel</string>
     <string name="batch_patch_edit_patches">Patches kiezen</string>
     <string name="batch_patch_state_no_apk">Geen APK</string>
     <string name="batch_patch_state_no_patches">Geen patches</string>
@@ -371,6 +440,7 @@ Buitenste zone (gestippeld): kan worden afgesneden door het launcher-masker - ho
     <string name="home_app_info_delete_preservation_note">Uw patch-keuze en opties worden bewaard voor toekomstig patchen</string>
     <string name="home_app_info_patches_name_default">Patches</string>
     <string name="home_app_info_patches_name_fallback">Naamloos</string>
+    <string name="home_app_info_patches_source_removed">Patchbron verwijderd</string>
     <string name="home_app_info_patches_replace_fail">Kan patches niet importeren: %s</string>
     <string name="home_app_info_repatch_no_original_apk">Originele APK niet gevonden. Kan deze app niet opnieuw patchen</string>
     <string name="home_app_info_original_package_name">Originele pakketnaam</string>
@@ -383,8 +453,17 @@ Buitenste zone (gestippeld): kan worden afgesneden door het launcher-masker - ho
     <string name="home_app_info_install_type_shizuku_play_store">Shizuku Play Store installeren</string>
     <string name="home_app_info_patch_update_available">Patchupdate beschikbaar</string>
     <string name="home_app_info_patch_update_available_description">Er is een nieuwere versie van patches beschikbaar. Repatch uw app om de laatste verbeteringen en correcties te krijgen</string>
+    <string name="home_app_info_app_update_available">App-update beschikbaar</string>
+    <string name="home_app_info_app_update_available_description">De patchbronnen ondersteunen een nieuwere versie van deze app. Pas de patch opnieuw toe om naar die versie over te stappen.</string>
+    <string name="home_app_info_newest_supported_version">Nieuwste ondersteunde versie</string>
+    <string name="home_app_info_version_move">Geïnstalleerd %1$s, nieuwste ondersteunde versie %2$s</string>
     <string name="home_app_info_app_deleted_warning">App was verwijderd</string>
     <string name="home_app_info_app_deleted_description">Deze app is buiten Morphe verwijderd. Installeer de patch om de functionaliteit te herstellen</string>
+    <string name="home_app_info_not_patched_description">Er is een niet-gepatchte versie van deze app geïnstalleerd. Morphe heeft nog steeds zijn eerdere patchrecord.</string>
+    <string name="patcher_rename_title">Dit zal een kloon installeren</string>
+    <string name="patcher_rename_description">De patches hebben deze app gebouwd onder een eigen pakketnaam, dus het installeren voegt een kloon toe naast <b>%s</b> in plaats van het bij te werken</string>
+    <string name="patcher_rename_result_package">Zal installeren als</string>
+    <string name="patcher_rename_replaces">Er is al een app met die naam geïnstalleerd en deze wordt vervangen</string>
     <string name="home_app_info_apk_size">APK-grootte</string>
     <string name="home_app_info_cpu_arch">CPU-architectuur</string>
     <!-- Home Screen - Root Mode -->
@@ -401,7 +480,39 @@ Buitenste zone (gestippeld): kan worden afgesneden door het launcher-masker - ho
     <string name="patcher_error_copied">Fout gekopieerd naar klembord</string>
     <string name="patcher_error_log">Foutlogboek</string>
     <string name="patcher_error_technical">Technische details</string>
-    <string name="patcher_error_dialog_app_info">App-info</string>
+    <string name="patcher_error_dialog_diagnostics">Foutrapportage</string>
+    <!-- Titles of the cards the expert log shows in place of the raw start and success log lines -->
+    <string name="patcher_card_started">Patchen begonnen</string>
+    <string name="patcher_card_succeeded">Patchen geslaagd</string>
+    <!-- Field labels, shown in a column beside their values. Keep them short, a long one is cut off rather than wrapped -->
+    <string name="patcher_field_app">App</string>
+    <string name="patcher_field_package">Pakket</string>
+    <string name="patcher_field_source">Bron</string>
+    <string name="patcher_field_split">Gesplitste APK</string>
+    <string name="patcher_field_manager">Beheerder</string>
+    <string name="patcher_field_patcher">Patcher</string>
+    <string name="patcher_field_runtime">Runtime</string>
+    <!-- Native code libraries (.so files) packed inside the APK -->
+    <string name="patcher_field_libraries">Bibliotheken</string>
+    <string name="patcher_field_android">Android</string>
+    <string name="patcher_field_device">Apparaat</string>
+    <!-- Free and total RAM of the device, never its storage -->
+    <string name="patcher_field_memory">Geheugen</string>
+    <string name="patcher_field_storage">Opslag</string>
+    <!-- Size of the patched APK, once patching finished -->
+    <string name="patcher_field_output_size">Bestandsgrootte</string>
+    <!-- How long patching took -->
+    <string name="patcher_field_time">Tijd</string>
+    <!-- Average and peak memory the patcher process held while it ran -->
+    <string name="patcher_field_memory_average">Gemiddeld geheugen</string>
+    <string name="patcher_field_memory_max">Maximaal geheugen</string>
+    <!-- Fastest read or write rate reached while patching, in data per second -->
+    <string name="patcher_field_io_peak">Opslag I/O piek</string>
+    <string name="patcher_field_value_unknown">onbekend</string>
+    <!-- Value of "Libraries": the libraries this device cannot use were dropped from the patched APK -->
+    <string name="patcher_field_value_stripped">verwijderd</string>
+    <!-- Value of "Libraries": every library was left in the patched APK -->
+    <string name="patcher_field_value_kept">behouden</string>
     <string name="patcher_tab_logs">Patchlogboeken</string>
     <string name="patcher_tab_game">Spellen</string>
     <string name="patcher_logs_waiting">Wacht op logboekuitvoer…</string>
@@ -412,7 +523,7 @@ Buitenste zone (gestippeld): kan worden afgesneden door het launcher-masker - ho
     <string name="patcher_success_subtitle">Je app is gepatcht en geïnstalleerd!</string>
     <string name="patcher_complete_title">Patchen voltooid! ✨</string>
     <string name="patcher_failed_title">Oeps! Er ging iets mis</string>
-    <string name="patcher_failed_subtitle">Controleer de onderstaande foutdetails</string>
+    <string name="patcher_failed_hint">Tik op %s om te zien wat er misging</string>
     <string name="patcher_failed_dialog_title">Patchen mislukt</string>
     <string name="patcher_unknown_error">Onbekende fout opgetreden</string>
     <string name="patcher_split_step_extracting">Het uitpakken van split APKs</string>
@@ -431,6 +542,7 @@ Deïnstalleren wist alle app-gegevens permanent."</string>
     <string name="patcher_ready_to_install_subtitle">Druk op de onderstaande knop om te installeren</string>
     <string name="patcher_ready_to_mount_subtitle">Druk op de onderstaande knop om te koppelen</string>
     <string name="patcher_patches_excluded_for_installer">Niet beschikbaar voor deze installatiemethode en uitgesloten: %s</string>
+    <string name="patcher_back_to_game_hint">Tik op %1$s om terug te keren naar je spel</string>
     <string name="patcher_storage_permission_dialog_title">Kan opslagpad niet openen</string>
     <string name="patcher_incompatible_patcher_title">Update vereist</string>
     <string name="patcher_incompatible_patcher_description">Het bundel &lt;b&gt;%1$s&lt;/b&gt; vereist patcher versie &lt;b&gt;%2$s&lt;/b&gt; of hoger. Update Morphe om deze app te patchen</string>
@@ -442,6 +554,12 @@ Deïnstalleren wist alle app-gegevens permanent."</string>
     <string name="patcher_storage_permission_open_settings">Open opslaginstellingen</string>
     <string name="patcher_storage_badge_denied">Toestemming geweigerd</string>
     <string name="patcher_storage_badge_missing">Niet gevonden</string>
+    <string name="patcher_missing_patches_title">Niet meer aangeboden</string>
+    <string name="patcher_missing_patches_description">Patchoptiebestanden ontbreken</string>
+    <string name="patcher_missing_patches_label">Een of meer patchopties verwijzen naar bestanden die er niet meer zijn. Verwijder de paden om zonder deze bestanden te patchen, of zet de bestanden terug en probeer het opnieuw.</string>
+    <string name="patcher_option_paths_gone_title">Verwijder de paden en ga door</string>
+    <string name="patcher_option_paths_gone_description">Deze map kan niet meer worden gelezen. Kies hem opnieuw of wis hem, anders stopt het patchen en wordt ernaar gevraagd.</string>
+    <string name="patcher_option_paths_clear">Het pictogram waarmee de app wordt gepatcht. Het wordt ook gebruikt waar de app het later niet kan wijzigen, zoals bij Android Auto en in de app-lijst van de systeeminstellingen.</string>
     <string name="patcher_storage_permission_hint">Tip: Verplaats bestanden naar /Android/data/app.morphe.manager/files/ - geen extra toestemmingen nodig</string>
     <!-- Patcher Screen - Patcher Steps -->
     <string name="patcher_step_group_preparing">Voorbereiden</string>
@@ -456,6 +574,11 @@ Deïnstalleren wist alle app-gegevens permanent."</string>
     <string name="battery_optimization_dialog_title">Bescherming tegen achtergrond patching</string>
     <string name="battery_optimization_dialog_description">Sommige apparaten kunnen de patcher stoppen wanneer de app geminimaliseerd is. Sta Morphe toe om zonder batterijbeperkingen te draaien om ervoor te zorgen dat het patchen betrouwbaar voltooid wordt.</string>
     <string name="battery_optimization_not_now">Niet nu</string>
+    <!-- Memory limit dialog, shown after the patcher process was killed -->
+    <string name="patcher_memory_adjustment_title">Onvoldoende geheugen</string>
+    <string name="patcher_memory_adjustment_description">De patcher is door het systeem gestopt terwijl deze draaide met een geheugenlimiet van %1$d MB. Het verlagen van de limiet naar %2$d MB maakt de patcher een kleiner doelwit en kan de run laten voltooien.</string>
+    <string name="patcher_memory_adjustment_description_at_minimum">De patcher is door het systeem gestopt terwijl deze draaide met een geheugenlimiet van %1$d MB, wat al het laagst beschikbare is. Probeer te patchen met minder patchbronnen of selecteer minder patches.</string>
+    <string name="patcher_memory_adjustment_apply">Verlaag naar %1$d MB</string>
     <!-- Patcher Screen - Patcher Worker -->
     <string name="patcher_notification_title">Patchen bezig…</string>
     <string name="patcher_notification_text">Tik om terug te keren naar de patcher</string>
@@ -468,38 +591,46 @@ Deïnstalleren wist alle app-gegevens permanent."</string>
     <string name="patcher_message_4">Digitale magie aan het brouwen… ☕</string>
     <string name="patcher_message_5">Koffiepauze aanbevolen… ☕</string>
     <string name="patcher_message_6">Kijk naar buiten, het is er mooi… 🌤️</string>
-    <string name="patcher_message_7">1\'en en 0\'en aan het aanpassen… 🤖</string>
+    <string name="patcher_message_7">Bezig met aanpassen van enen en nullen… 🤖</string>
     <string name="patcher_message_8">Digitale spaghetti aan het ontwarren… 🍝</string>
     <!-- Morphe patches fix YouTube bugs that Google still has not fixed. -->
     <string name="patcher_message_9">Bugs in de ongepatchte app worden opgelost… 🪲</string>
     <string name="patcher_message_10">Geweldige patches zijn het wachten waard… ⏳</string>
     <string name="patcher_message_11">Pixels aan het polijsten tot ze glimmen… 💎</string>
-    <string name="patcher_message_12">Blijf zitten totdat de kapitein het \"Patching in progress\"-teken uitschakelt... 💺✈️</string>
+    <string name="patcher_message_12">Blijf zitten totdat de kapitein het \"Patchen-in-behandeling\" teken uitschakelt... 💺✈️</string>
     <string name="patcher_message_13">Je gepatchte app aan het bereiden, heet en vers… 🍳</string>
     <!-- "bytecode" can be translated from "the app code" -->
-    <string name="patcher_message_14">Beleefd onderhandelen met bytecode… 🤝</string>
+    <string name="patcher_message_14">Beleefd aan het onderhandelen met bytecode… 🤝</string>
     <!-- Space flight communications callout. -->
-    <string name="patcher_message_15">Alle systemen nominaal… patchtraject is stabiel… 🚀</string>
+    <string name="patcher_message_15">Alle systemen binnen de normen… patchtraject is stabiel… 🚀</string>
     <string name="patcher_message_16">Extra stroom persen, als sap uit een digitale citroen… 🍋</string>
     <string name="patcher_message_17">De app aanmoedigen om zijn nieuwe, betere zelf te accepteren… 🌱</string>
-    <!-- Quantum physics (box emoji is a reference to Schrodinger's cat). -->
+    <!-- Quantum physics (box emoji is a reference to Schrödinger's cat). -->
     <string name="patcher_message_18">De app-superpositie veranderen van ongepatcht naar gepatcht… 📦⚛️</string>
     <!-- Throw away reference to a Saturday Night Live sketch. "fever" means sickness or the flu. "prescription" means medical treatment or can be translated from "cure" -->
-    <string name="patcher_message_19">Uw app heeft koorts, en de enige remedie zijn meer patches… 🩺🔔</string>
-    <string name="patcher_message_20">Verwijder onzin. Even geduld… 🗑️</string>
+    <string name="patcher_message_19">Uw app heeft koorts, en de enige remedie is meer patches… 🩺🔔</string>
+    <string name="patcher_message_20">Onzin aan het verwijderen. Even geduld… 🗑️</string>
     <!-- Expert patcher Screen -->
     <string name="patching_app">App aanpassen</string>
     <string name="memory_usage">Geheugengebruik</string>
+    <!-- "%1$s" is the share of the memory limit the patcher is using, already formatted as a percentage. "%2$s" is that limit in megabytes. -->
+    <string name="memory_usage_detail">%1$s van %2$s MB</string>
+    <string name="cpu_usage">CPU-gebruik</string>
+    <string name="storage_io_usage">Opslag-I/O</string>
     <!-- Patcher Screen - Other hidden strings -->
     <string name="applying_patches">Patches toepassen</string>
     <string name="failed_to_execute_patch">Kon %s niet toepassen</string>
-    <string name="patched_app_saved_toast">Gepatchte app opgeslagen voor later</string>
     <string name="patched_app_save_failed_toast">Kon gepatchte app niet opslaan</string>
     <string name="plugin_activity_dialog_body">Gebruikersinteractie is vereist om te kunnen doorgaan met deze plugin</string>
     <string name="patcher_process_exit_message">Patcher-proces is afgesloten met code %s</string>
+    <string name="patcher_heap_exhausted_message">De patcher heeft onvoldoende geheugen met een heap van %1$d MB. Deze app is te groot voor de geselecteerde patches. Probeer te patchen met minder patchbronnen, of selecteer minder patches.</string>
     <string name="install_app_success">Succesvol geïnstalleerd</string>
     <string name="install_app_fail">Kon app niet installeren: %s</string>
+    <string name="install_ignore_signature">Toch installeren</string>
+    <string name="install_ignore_signature_description">Behoudt de app-gegevens, maar werkt alleen als een root-module de handtekeningverificatie van Android uitschakelt.</string>
     <string name="uninstall_app_fail">Kon de app niet verwijderen: %s</string>
+    <string name="uninstall_app_unverified">Op zijn plaats gelaten: Morphe kon niet verifiëren dat de geïnstalleerde app de build is die het heeft gepatcht.</string>
+    <string name="launch_app_unverified">Morphe kon niet verifiëren dat de geïnstalleerde app de build is die het heeft gepatcht.</string>
     <string name="uninstall_timeout">De-installatie is mislukt door time-out</string>
     <string name="save_apk_success">APK opgeslagen</string>
     <string name="saved_app_export_failed">Kan gepatchte app niet exporteren</string>
@@ -523,6 +654,12 @@ Deïnstalleren wist alle app-gegevens permanent."</string>
     <string name="mini_game_snake_swipe_to_start">Swipe om te starten</string>
     <string name="mini_game_dino_picker_subtitle">Tik om over cactussen te springen</string>
     <string name="mini_game_dino_tap_to_start">Tik om te rennen</string>
+    <string name="mini_game_blocks_picker_subtitle">Plaats de vormen, maak lijnen vrij</string>
+    <string name="mini_game_blocks_tap_to_start">Tik om te draaien, veeg om te bewegen, veeg omlaag om te laten vallen</string>
+    <string name="mini_game_bricks_picker_subtitle">Laat de bal stuiteren, breek de muur</string>
+    <string name="mini_game_bricks_tap_to_start">Sleep om te richten, tik om te lanceren</string>
+    <string name="mini_game_miner_picker_subtitle">Tik om te openen, houd vast om te vlaggen</string>
+    <string name="mini_game_pairs_picker_subtitle">Draai kaarten om, vind het paar</string>
     <!-- Settings -->
     <string name="appearance">Uiterlijk</string>
     <string name="advanced">Geavanceerd</string>
@@ -558,19 +695,31 @@ Deïnstalleren wist alle app-gegevens permanent."</string>
     <string name="settings_appearance_pure_black">Puur Zwart</string>
     <string name="settings_appearance_pure_black_description">Gebruikt echte zwarte achtergronden</string>
     <!-- Settings - Appearance Tab - Language Selector -->
+    <string name="settings_appearance_language_and_display">Taal &amp; weergave</string>
     <string name="settings_appearance_app_language">App-taal</string>
     <string name="settings_appearance_app_language_current">Huidige taal</string>
     <string name="settings_appearance_translations_info_title">Vertalingen voor sommige talen kunnen ontbreken of onvolledig zijn</string>
     <string name="settings_appearance_translations_info_text">"Om nieuwe talen te vertalen of de bestaande vertalingen te verbeteren, bezoek
 %s"</string>
+    <!-- Settings - Appearance Tab - Interface Scale -->
+    <string name="settings_appearance_ui_scale">Interface-schaal</string>
+    <string name="settings_appearance_ui_scale_current">Huidige schaal</string>
+    <string name="settings_appearance_ui_scale_description">Schaalt alles in de app, boven op de systeem-schermzoom en lettergrootte</string>
+    <string name="settings_appearance_ui_scale_preview_title">Voorbeeldinstelling</string>
+    <string name="settings_appearance_ui_scale_preview_subtitle">Tekst en bedieningselementen op deze schaal</string>
     <!-- Settings - Appearance Tab - Home Screen Section -->
     <string name="settings_appearance_home_screen">Startscherm</string>
     <string name="settings_appearance_greeting_phrases">Begroetingszinnen</string>
     <string name="settings_appearance_greeting_phrases_subtitle">Toon een begroetingsbericht op de startscherm</string>
     <string name="settings_appearance_app_grouping">App-groepering</string>
     <string name="settings_appearance_app_grouping_description">Toon een schakelaar op het startscherm om apps te groeperen op bron of eigen categorieën, en selecteer deze instelling wanneer deze uit staat</string>
-    <string name="settings_appearance_sort_button">Sorteer knop</string>
-    <string name="settings_appearance_sort_button_description">Toon de sorteerknop op het startscherm</string>
+    <string name="settings_appearance_patch_list">Patchlijst</string>
+    <string name="settings_appearance_patch_categories">Groeperen op categorie</string>
+    <string name="settings_appearance_patch_categories_description">Sectie patchlijsten op basis van de categorieën die een bron declareert; bronnen die geen categorieën declareren blijven als een gewone lijst.</string>
+    <string name="settings_appearance_repatch_notice">Melding over opnieuw patchen</string>
+    <string name="settings_appearance_repatch_notice_description">Toon een banner op het startscherm wanneer gepatchte apps opnieuw kunnen worden gepatcht</string>
+    <string name="settings_appearance_sort_button">Sorteer- en filterknop</string>
+    <string name="settings_appearance_sort_button_description">Toon de sorteer- en filterknop op het startscherm</string>
     <string name="settings_appearance_app_card_colors">App-kaart kleuren</string>
     <string name="settings_appearance_app_card_colors_default">Standaard</string>
     <string name="settings_appearance_app_card_colors_default_description">Geef elke app de kleur van zijn eigen bundle</string>
@@ -600,8 +749,14 @@ Deïnstalleren wist alle app-gegevens permanent."</string>
     <!-- Settings - Advanced Tab - Updates Section -->
     <string name="settings_advanced_updates">Updates</string>
     <string name="settings_advanced_patcher">Patcher</string>
-    <string name="settings_advanced_updates_use_prereleases">Voorlopige updates</string>
-    <string name="settings_advanced_updates_use_prereleases_description">Vroege toegang tot nieuwe versies van de Morphe-app. Schakel pre-release per bron in bij patch-bronnen</string>
+    <string name="settings_advanced_updates_manager_prereleases">Pre-release-updates</string>
+    <!-- "Morphe" here is the app itself, not the patches. Do not translate this as pre-release patches -->
+    <string name="settings_advanced_updates_manager_prereleases_description">Vroege toegang tot nieuwe Morphe-versies</string>
+    <string name="settings_advanced_updates_prerelease_warning_title">Pre-release-updates inschakelen?</string>
+    <!-- Shown before pre-release updates are turned on for the app itself. Patches have their own toggle in each patch source -->
+    <string name="settings_advanced_updates_prerelease_warning_message">"Pre-release-versies van Morphe zijn nog in ontwikkeling en kunnen instabiel zijn.
+
+Patches worden niet beïnvloed: schakel pre-release-patches in voor elke bron in de patchbronnenlijst"</string>
     <string name="settings_advanced_updates_allow_metered">Mobiele data-updates</string>
     <string name="settings_advanced_updates_allow_metered_description">Hiermee kan Morphe en patch-updates downloaden via mobiele data</string>
     <string name="settings_advanced_updates_background_notifications">Achtergrondupdate-notificaties</string>
@@ -615,14 +770,6 @@ Deïnstalleren wist alle app-gegevens permanent."</string>
     <string name="settings_advanced_update_interval_monthly">Eenmaal per maand</string>
     <string name="settings_advanced_update_interval_chip_subtitle">Achtergrondcontrole frequentie</string>
     <string name="settings_advanced_update_interval_battery_warning">Achtergrondcontroles werken mogelijk niet betrouwbaar op sommige apparaten. Fabrikanten zoals Xiaomi, Huawei, Samsung en OnePlus beperken achtergrondprocessen vaak sterk om de batterij te sparen</string>
-    <string name="settings_advanced_auto_patch">Automatisch opnieuw patchen</string>
-    <string name="settings_advanced_auto_patch_description">Herpatcht geïnstalleerde apps op de achtergrond wanneer hun patches veranderen. Alleen apps met een opgeslagen originele APK worden ondersteund</string>
-    <string name="settings_advanced_auto_patch_interval">Frequentie opnieuw patchen</string>
-    <string name="settings_advanced_auto_patch_interval_chip_subtitle">Hoe vaak gepatchte apps worden herbouwd</string>
-    <string name="settings_advanced_auto_patch_charging">Alleen tijdens het opladen</string>
-    <string name="settings_advanced_auto_patch_charging_description">Patchen is zwaar voor de CPU en het geheugen, dus het wacht op een oplader</string>
-    <string name="settings_advanced_auto_patch_install">Automatisch installeren</string>
-    <string name="settings_advanced_auto_patch_install_description">Vereist Shizuku als de installer. Met elke andere installer worden de gepatchte apps alleen opgeslagen</string>
     <string name="settings_advanced_external_batch_patch">Externe triggers toestaan</string>
     <string name="settings_advanced_external_batch_patch_description">Hiermee kunnen automatiseringsapps batch patchen starten met een intent. Elke aanvraag wordt bevestigd voordat er iets wordt uitgevoerd</string>
     <string name="external_batch_patch_title">Batch patchen starten?</string>
@@ -630,13 +777,6 @@ Deïnstalleren wist alle app-gegevens permanent."</string>
     <string name="external_batch_patch_trust_caller">Sta deze app altijd toe</string>
     <string name="external_batch_patch_unknown_caller">Een onbekende app</string>
     <!-- Notification content -->
-    <string name="notification_auto_patch_title">Automatisch opnieuw patchen voltooid</string>
-    <string name="notification_auto_patch_running_title">Apps opnieuw patchen</string>
-    <string name="notification_auto_patch_blocked_title">Automatisch opnieuw patchen is niet uitgevoerd</string>
-    <string name="notification_auto_patch_blocked_battery">Het systeem heeft deze installatie geblokkeerd. Op Xiaomi en vergelijkbare apparaten, zet \"Install via USB\" aan in de ontwikkelaarsopties. Op een werkprofiel kunnen installaties worden beperkt door beleid</string>
-    <string name="notification_auto_patch_blocked_foreground">Uitzondering maken voor Morphe van batterijoptimalisatie, anders stopt Android de uitvoering voordat deze is gestart</string>
-    <string name="notification_channel_auto_patch">Automatisch opnieuw patchen</string>
-    <string name="notification_channel_auto_patch_description">Stille voortgangs- en resultaatmeldingen voor gepland opnieuw patchen</string>
     <string name="notification_manager_update_title">Morphe-update beschikbaar</string>
     <string name="notification_bundle_update_title">Nieuwe patches beschikbaar</string>
     <string name="notification_update_text">Versie %s is klaar om te downloaden</string>
@@ -677,15 +817,9 @@ Deïnstalleren wist alle app-gegevens permanent."</string>
     <string name="settings_advanced_github_pat_export_warning">Deel uw PAT niet. Als u deze in een exportbestand met instellingen opneemt, houd dat bestand dan privé, omdat het de token bevat</string>
     <!-- Settings - Advanced Tab - Patch Options Section -->
     <string name="settings_advanced_patch_options">Patchopties</string>
-    <string name="settings_advanced_patch_options_youtube_description">Thema, branding en headeropties</string>
+    <string name="settings_advanced_patch_options_youtube_description">Branding- en headeropties</string>
     <string name="settings_advanced_patch_options_restart_message">Het wijzigen van patchopties vereist dat de app opnieuw wordt gepatcht om de wijzigingen door te voeren</string>
     <string name="settings_advanced_patch_options_expert_mode_notice">In Expertmodus zijn patchopties beschikbaar tijdens het patchingproces</string>
-    <!-- Settings - Advanced Tab - Patch Options Section: Theme Colors -->
-    <string name="settings_advanced_patch_options_theme_colors">App-themakleuren</string>
-    <string name="settings_advanced_patch_options_theme_colors_description">Wijzigt de achtergrondkleur</string>
-    <string name="settings_advanced_patch_options_dark_theme_color">Donkere themakleur</string>
-    <string name="settings_advanced_patch_options_light_theme_color">Lichte themakleur</string>
-    <string name="settings_advanced_patch_options_theme_color_description">Kan een hex-kleur (#RRGGBB) zijn of een kleurbronverwijzing</string>
     <string name="settings_advanced_patch_options_loading">Patchopties laden…</string>
     <string name="settings_advanced_patch_options_waiting_for_source">Wacht tot de patchbron is bijgewerkt</string>
     <string name="settings_advanced_patch_options_load_error">Kan patchopties niet laden</string>
@@ -695,6 +829,10 @@ Deïnstalleren wist alle app-gegevens permanent."</string>
     <string name="settings_advanced_patch_options_custom_branding_description">Wijzigt de app-weergavenaam</string>
     <string name="settings_advanced_patch_options_custom_branding_app_name">Appnaam</string>
     <string name="settings_advanced_patch_options_custom_branding_app_name_hint">Voer aangepaste naam in</string>
+    <string name="settings_advanced_patch_options_path_gone">Het aangepaste app-pictogram heeft een map met pictogramafbeeldingen nodig</string>
+    <string name="settings_advanced_patch_options_custom_branding_app_icon">App-pictogram</string>
+    <string name="settings_advanced_patch_options_custom_branding_app_icon_description">Het pictogram waarmee de app wordt gepatcht. Het wordt ook gebruikt waar de app dit later niet kan wijzigen, zoals in Android Auto en in de app-lijst van de systeeminstellingen.</string>
+    <string name="settings_advanced_patch_options_custom_branding_app_icon_needs_folder">Het aangepaste app-pictogram heeft een map met pictogramafbeeldingen nodig.</string>
     <string name="settings_advanced_patch_options_custom_branding_custom_icon">Aangepast pictogram</string>
     <string name="settings_advanced_patch_options_custom_branding_custom_icon_instruction">"Map met afbeeldingen om te gebruiken als een aangepast pictogram.
 
@@ -779,6 +917,8 @@ De afbeelddimensionen moeten als volgt zijn:
     <string name="installer_action_open_shizuku">Shizuku openen</string>
     <string name="installer_hint_generic">De installatie is mislukt. Probeer het opnieuw of schakel over naar een ander installatieprogramma</string>
     <string name="installer_hint_conflict">Een andere app met hetzelfde pakketnaam is al geïnstalleerd. Verwijder deze voordat u doorgaat</string>
+    <string name="installer_confirm_notification_title">Bevestig de installatie</string>
+    <string name="installer_confirm_notification_text">Tik om de installatie van de gepatchte app te voltooien</string>
     <string name="installer_external_launched">%s wordt geopend…</string>
     <string name="installer_external_timeout">%s heeft de installatie niet bevestigd. Controleer de andere app en probeer het opnieuw</string>
     <string name="installer_external_success">%s heeft een succesvolle installatie gemeld</string>
@@ -795,7 +935,7 @@ De afbeelddimensionen moeten als volgt zijn:
     <string name="settings_prompt_installer_on_install">Keuze van installer</string>
     <string name="settings_prompt_installer_on_install_description">Toont het dialoogvenster voor het selecteren van de installer bij elke geïnstalleerde gepatchte app</string>
     <string name="settings_auto_install_with_shizuku">Automatisch installeren na patchen</string>
-    <string name="settings_auto_install_with_shizuku_description">Installeert de gepatchte APK stilzwijgend zodra het patchen is voltooid</string>
+    <string name="settings_auto_install_with_shizuku_description">Installeert de gepatchte APK zodra het patchen voltooid is</string>
     <string name="settings_auto_uninstall_with_shizuku">Automatisch verwijderen bij conflicten</string>
     <string name="settings_auto_uninstall_with_shizuku_description">Wanneer automatisch installeren met Shizuku, verwijder eerst de bestaande app als Android een signature conflict meldt. Dit kan app-gegevens verwijderen.</string>
     <string name="settings_auto_uninstall_warning_title">Automatisch verwijderen inschakelen?</string>
@@ -833,6 +973,7 @@ Details: %2$s"</string>
     <string name="settings_system_process_runtime_enable">Schakel processruntime in</string>
     <string name="settings_system_memory_limit_subtitle">Geheugen beschikbaar voor patching</string>
     <string name="settings_system_memory_limit_warning">Laag geheugenlimiet kan mislukken bij patching van grotere apps</string>
+    <string name="settings_system_memory_limit_high_warning">Een hoge geheugenlimiet kan patchen op sommige apparaten veel langzamer maken. Verhoog deze alleen als patchen blijft mislukken bij lagere limieten.</string>
     <string name="settings_system_process_runtime_enabled_description">%s MB limiet</string>
     <string name="settings_system_process_runtime_disabled_description">Klik om te configureren</string>
     <string name="settings_system_process_runtime_description_not_available">Deze functie vereist Android 11 of hoger</string>
@@ -892,6 +1033,7 @@ Details: %2$s"</string>
     <string name="settings_system_apks_delete_selected_title">Geselecteerde APK\'s verwijderen?</string>
     <string name="settings_system_apks_delete_selected_confirm">Dit verwijdert de geselecteerde APK-bestanden permanent.</string>
     <string name="settings_system_apks_deleted_all">APK\'s zijn succesvol verwijderd.</string>
+    <string name="settings_system_apks_delete_failed">Sommige APK-bestanden konden niet worden verwijderd</string>
     <string name="settings_system_apks_export_zip_success">Geselecteerde APK\'s geëxporteerd</string>
     <string name="settings_system_apks_export_zip_failed">Kon geselecteerde APK\'s niet exporteren</string>
     <!-- Settings - System Tab - Storage Management screen -->
@@ -942,11 +1084,9 @@ Details: %2$s"</string>
     <string name="settings_system_patch_selection_reset_package_confirm_title">Pakketselecties resetten?</string>
     <string name="settings_system_patch_selection_reset_selected_confirm_title">Geselecteerde pakketten resetten?</string>
     <string name="settings_system_patch_selection_reset_source_confirm_title">Bronselectie resetten?</string>
-    <string name="settings_system_patch_selection_no_saved">Geen opgeslagen patchselecties</string>
     <string name="settings_system_patch_selection_total_summary_format">%1$s tot %2$s</string>
     <string name="settings_system_patch_selection_patches_in_sources_format">%1$s tot %2$s</string>
     <string name="settings_system_patch_selection_source_format">Bron #%s</string>
-    <string name="settings_system_patch_selection_will_delete">Dit zal verwijderen:</string>
     <string name="settings_system_patch_selection_reset_all_warning">Dit zal permanent alle opgeslagen patchselecties voor alle pakketten en bronnen verwijderen</string>
     <string name="settings_system_patch_selection_reset_package_warning">Dit verwijdert permanent alle opgeslagen patchselecties voor &lt;b&gt;%s&lt;/b&gt; over alle bronnen</string>
     <string name="settings_system_patch_selection_reset_source_warning">Dit verwijdert permanent opgeslagen patchselecties voor &lt;b&gt;%1$s&lt;/b&gt; in &lt;b&gt;%2$s&lt;/b&gt;</string>
@@ -993,7 +1133,21 @@ Details: %2$s"</string>
     <string name="credits_current_development">Huidige ontwikkeling</string>
     <string name="credits_prior_development">Eerdere ontwikkeling</string>
     <string name="opensource_licenses">Open-source licenties</string>
+    <!-- Easter egg offered after seven taps on the version in the About dialog -->
+    <string name="easter_egg_pill_title">Een keuze</string>
+    <string name="easter_egg_pill_message">Neem de blauwe pil en de advertenties blijven precies waar ze zijn. Neem de rode en zie hoe diep de bytecode gaat.</string>
+    <string name="easter_egg_pill_red">Rode pil</string>
+    <string name="easter_egg_pill_blue">Blauwe pil</string>
+    <string name="easter_egg_pill_red_toast">Matrix-achtergrond ontgrendeld</string>
+    <string name="easter_egg_pill_blue_toast">De advertenties wachten op je</string>
+    <string name="easter_egg_pill_message_again">Je bent al in de Matrix. De rode pil brengt je terug naar de regen, de blauwe maakt je wakker.</string>
+    <string name="easter_egg_pill_red_toast_again">Terug in de regen</string>
+    <string name="easter_egg_pill_blue_toast_again">Losgekoppeld. De weg terug is waar hij altijd was.</string>
     <!-- Shared strings -->
+    <!-- Download progress of a bundle or of the manager itself. "%1$s" and "%2$s" are the
+         megabytes read and expected, "%3$s" is the percentage; the doubled "%%" after it is
+         how a literal percent sign is written here. -->
+    <string name="download_progress">%1$s MB / %2$s MB (%3$s%%)</string>
     <string name="select_file">Selecteer bestand</string>
     <string name="select_folder">Map selecteren</string>
     <string name="patches">Patches</string>
@@ -1005,6 +1159,7 @@ Details: %2$s"</string>
     <string name="filter">Filter</string>
     <string name="reset">Reset</string>
     <string name="reset_all">Alles resetten</string>
+    <string name="apply">Toepassen</string>
     <string name="confirm">Bevestigen</string>
     <string name="warning">Waarschuwing</string>
     <string name="error_">Fout</string>
@@ -1070,9 +1225,10 @@ Details: %2$s"</string>
     <string name="available">Beschikbaar</string>
     <string name="continue_">Doorgaan</string>
     <string name="version">Versie</string>
+    <string name="clone">Kloon</string>
     <string name="patch">Patchen</string>
     <string name="patching">Patchen</string>
-    <string name="repatch">Opnieuw patchen</string>
+    <string name="patched">Gepatcht</string>
     <string name="open">Openen</string>
     <string name="mount">Mount</string>
     <string name="mounted">Gemount</string>
@@ -1093,6 +1249,8 @@ Details: %2$s"</string>
     <string name="hidden">Verborgen</string>
     <string name="unhide">Toon</string>
     <string name="unhide_done">Weergeven</string>
+    <string name="ignore">Negeren</string>
+    <string name="stop_ignoring">Stop met negeren</string>
     <string name="logs">Logboeken</string>
     <string name="sources">Bron-URL</string>
     <string name="installing_ellipsis">Installeren…</string>
@@ -1101,6 +1259,9 @@ Details: %2$s"</string>
     <string name="importing_ellipsis">Importeren…</string>
     <string name="imported_successfully">Geïmporteerd succesvol</string>
     <string name="changelog">Wijzigingslogboeken bekijken</string>
+    <string name="changelog_for_app">Wijzigingen voor %s</string>
+    <string name="changelog_general_changes">Algemene wijzigingen</string>
+    <string name="whats_new">Wat is er nieuw</string>
     <string name="changelog_description">Bekijk de laatste wijzigingen in deze update</string>
     <string name="changelog_download_fail">Fout bij het downloaden van de wijzigingslogboek: %s</string>
     <string name="changelog_empty">Geen changelog beschikbaar</string>
@@ -1113,13 +1274,13 @@ Details: %2$s"</string>
     <string name="install_update_manager_failed">Fout bij het installeren van update</string>
     <string name="installing_manager_update">Update installeren…</string>
     <string name="downloading_manager_update">Update downloaden…</string>
-    <!-- Shown while resuming a download, before the total size is known -->
-    <string name="manager_update_progress_downloaded">%1$.1f MB gedownload</string>
+    <!-- Shown while downloading, before the total size is known. "%1$s" is the megabytes so far. -->
+    <string name="manager_update_progress_downloaded">%1$s MB gedownload</string>
     <string name="manager_update_not_ready">Deze release wordt nog gepubliceerd. Probeer het over enkele minuten opnieuw</string>
+    <string name="update_download_missing">De gedownloade update is niet meer beschikbaar. Download deze opnieuw.</string>
     <string name="download_manager_failed">Downloaden van update mislukt: %s</string>
     <string name="failed_to_check_updates">Controleren op updates mislukt: %s</string>
     <string name="failed_to_download_update">Download van update mislukt: %s</string>
-    <string name="resume_download">Download hervatten</string>
     <string name="download_confirmation_metered">"U maakt momenteel gebruik van een datalimietverbinding en er kunnen kosten van uw serviceprovider van toepassing zijn.
 
 Wilt u toch doorgaan?"</string>

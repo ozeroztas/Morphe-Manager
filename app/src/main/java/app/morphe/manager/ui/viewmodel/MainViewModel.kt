@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.morphe.manager.domain.batch.BatchPatchCoordinator
 import app.morphe.manager.domain.batch.BatchPlanResolver
+import app.morphe.manager.domain.batch.BatchTarget
 import app.morphe.manager.domain.manager.PreferencesManager
 import kotlinx.coroutines.launch
 
@@ -23,6 +24,18 @@ class MainViewModel(
      * an update check, then resets the flag back to false.
      */
     var pendingUpdateCheck by mutableStateOf(false)
+
+    /**
+     * Set by [app.morphe.manager.MainActivity.handleDeepLinkIntent] when the changelog action of
+     * an update notification is tapped. MorpheManager shows it, then resets the flag to null.
+     */
+    var pendingBundleChangelogUid: Int? by mutableStateOf(null)
+
+    /**
+     * Set by [app.morphe.manager.MainActivity.handleDeepLinkIntent] when the changelog action of
+     * a manager update notification is tapped. MorpheManager shows it, then clears the flag.
+     */
+    var pendingManagerChangelog by mutableStateOf(false)
 
     /**
      * Set by [app.morphe.manager.MainActivity.handleDeepLinkIntent] when the app is opened
@@ -107,18 +120,18 @@ class MainViewModel(
     }
 
     /**
-     * Resolves the apps a launcher shortcut asked to re-patch. No confirmation dialog here:
-     * the request comes from Morphe's own shortcut and only opens the preflight list, which
-     * the user still has to start by hand.
+     * Resolves the apps the launcher shortcut or the re-patch notification asked about. No
+     * confirmation dialog here: the request comes from Morphe itself and only opens the
+     * preflight list, which the user still has to start by hand.
      */
     fun onShortcutBatchRequest() {
         pendingOutdatedBatch = false
         viewModelScope.launch {
-            val packageNames = batchPlanResolver.findOutdatedPackages()
-            if (packageNames.isEmpty()) {
+            val targets = batchPlanResolver.findOutdatedTargets()
+            if (targets.isEmpty()) {
                 nothingToRepatch = true
             } else {
-                approvedBatchPatch = BatchPatchRequest(packageNames, callerPackage = null)
+                approvedBatchPatch = BatchPatchRequest(targets, callerPackage = null)
             }
         }
     }
@@ -128,14 +141,14 @@ class MainViewModel(
     }
 
     /**
-     * Reopens the queue an automatic run left behind. Navigating with its own package list
+     * Reopens the queue a run finished in the background. Navigating with its own target list
      * keeps the finished state, which the batch screen would otherwise re-plan away.
      */
     fun onShowBatchResult() {
         pendingBatchResult = false
-        val packageNames = batchPatchCoordinator.state.value?.items?.map { it.packageName }
-        if (packageNames.isNullOrEmpty()) return
-        approvedBatchPatch = BatchPatchRequest(packageNames, callerPackage = null)
+        val targets = batchPatchCoordinator.state.value?.items?.map { it.target }
+        if (targets.isNullOrEmpty()) return
+        approvedBatchPatch = BatchPatchRequest(targets, callerPackage = null)
     }
 
     fun dismissExternalBatch() {
@@ -154,7 +167,7 @@ class MainViewModel(
      * @param callerPackage Package that sent the intent, null when it could not be determined.
      */
     data class BatchPatchRequest(
-        val packageNames: List<String>,
+        val targets: List<BatchTarget>,
         val callerPackage: String?
     )
 }

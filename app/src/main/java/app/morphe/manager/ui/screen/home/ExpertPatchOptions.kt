@@ -33,13 +33,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.morphe.manager.R
-import app.morphe.manager.patcher.patch.ExplicitOptionKind
-import app.morphe.manager.patcher.patch.ImageSize
-import app.morphe.manager.patcher.patch.Option
-import app.morphe.manager.patcher.patch.PatchInfo
+import app.morphe.manager.patcher.patch.*
 import app.morphe.manager.ui.screen.shared.*
 import app.morphe.manager.util.*
 import kotlinx.collections.immutable.ImmutableList
+import kotlin.math.roundToInt
 
 /**
  * Represents the resolved UI kind of patch option.
@@ -65,6 +63,14 @@ private sealed interface OptionKind {
     data object IntLong         : OptionKind
     data object FloatDouble     : OptionKind
     data object ArrayDropdown   : OptionKind
+    /** Slider for a typed integer option that declares bounds. */
+    data class IntSlider(val bounds: SliderBounds)        : OptionKind
+    /** Slider for a typed decimal option that declares bounds. */
+    data class FloatSlider(val bounds: SliderBounds)      : OptionKind
+    /** Range slider for a typed integer range option. */
+    data class IntRangeSlider(val bounds: SliderBounds)   : OptionKind
+    /** Range slider for a typed decimal range option. */
+    data class FloatRangeSlider(val bounds: SliderBounds) : OptionKind
 }
 
 /**
@@ -75,13 +81,20 @@ private fun resolveOptionKind(option: Option<*>, value: Any?): OptionKind {
     // Typed options dispatch to their dedicated picker Kind. Untyped string options
     // fall through to the heuristics below and render with the classic text field.
     option.explicitKind?.let { kind ->
-        return when (kind) {
-            ExplicitOptionKind.Folder   -> OptionKind.FolderPicker
-            ExplicitOptionKind.FilePath -> OptionKind.FilePicker
-            ExplicitOptionKind.Files    -> OptionKind.StringList
-            ExplicitOptionKind.Image    -> OptionKind.Image
-            ExplicitOptionKind.Color    -> OptionKind.Color
+        val explicit = when (kind) {
+            ExplicitOptionKind.Folder      -> OptionKind.FolderPicker
+            ExplicitOptionKind.FilePath    -> OptionKind.FilePicker
+            ExplicitOptionKind.Files       -> OptionKind.StringList
+            ExplicitOptionKind.Image       -> OptionKind.Image
+            ExplicitOptionKind.Color       -> OptionKind.Color
+            // A slider cannot be drawn without bounds, so such an option falls back
+            // to the numeric field below instead of rendering as an empty track
+            ExplicitOptionKind.IntSlider   -> option.sliderBounds?.let(OptionKind::IntSlider)
+            ExplicitOptionKind.FloatSlider -> option.sliderBounds?.let(OptionKind::FloatSlider)
+            ExplicitOptionKind.IntRange    -> option.sliderBounds?.let(OptionKind::IntRangeSlider)
+            ExplicitOptionKind.FloatRange  -> option.sliderBounds?.let(OptionKind::FloatRangeSlider)
         }
+        if (explicit != null) return explicit
     }
 
     val t        = option.type.toString()
@@ -152,6 +165,16 @@ private fun resolveOptionKind(option: Option<*>, value: Any?): OptionKind {
 }
 
 /**
+ * A stored range option value read back as a range. Range options hold a two element list,
+ * so anything else means the value predates the option or was written by another tool.
+ */
+private fun Any?.asFloatRange(): ClosedFloatingPointRange<Float>? {
+    val pair = (this as? List<*>)?.mapNotNull { (it as? Number)?.toFloat() } ?: return null
+    if (pair.size != 2) return null
+    return minOf(pair[0], pair[1])..maxOf(pair[0], pair[1])
+}
+
+/**
  * Options dialog for configuring patch options.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -171,9 +194,9 @@ internal fun PatchOptionsDialog(
 
     AppDialog(
         onDismissRequest = onDismiss,
-        title = patch.name,
+        title = patch.displayName,
         titleTrailingContent = {
-            DialogTitleAction(
+            TitleAction(
                 icon = Icons.Outlined.Restore,
                 contentDescription = stringResource(R.string.reset),
                 onClick = onReset
@@ -227,7 +250,14 @@ internal fun PatchOptionsDialog(
                     }
                 }
 
-                when (resolveOptionKind(option, value)) {
+                // The patcher rejects a Long where an Int is declared, so the text is read as the
+                // option's own type. A cleared field drops the value back to the patch default
+                fun onNumberInput(text: String) {
+                    if (text.isBlank()) return onValueChange(key, null)
+                    coerceOptionValue(option.type, text)?.let { onValueChange(key, it) }
+                }
+
+                when (val kind = resolveOptionKind(option, value)) {
                     OptionKind.StringList -> ListStringInputOption(
                         title = option.title,
                         description = option.description,
@@ -358,7 +388,7 @@ internal fun PatchOptionsDialog(
                         value = (value as? Number)?.toLong()?.toString() ?: "",
                         required = option.required,
                         keyboardType = KeyboardType.Number,
-                        onValueChange = { it.toLongOrNull()?.let { num -> onValueChange(key, num) } }
+                        onValueChange = ::onNumberInput
                     )
 
                     OptionKind.FloatDouble -> TextInputOption(
@@ -367,7 +397,7 @@ internal fun PatchOptionsDialog(
                         value = (value as? Number)?.toFloat()?.toString() ?: "",
                         required = option.required,
                         keyboardType = KeyboardType.Decimal,
-                        onValueChange = { it.toFloatOrNull()?.let { num -> onValueChange(key, num) } }
+                        onValueChange = ::onNumberInput
                     )
 
                     OptionKind.ArrayDropdown -> DropdownOptionItem(
@@ -376,6 +406,58 @@ internal fun PatchOptionsDialog(
                         value = value?.toString() ?: "",
                         presets = option.presets ?: emptyMap(),
                         onValueChange = { onValueChange(key, it) }
+                    )
+
+                    is OptionKind.IntSlider -> SliderOptionInput(
+                        title = option.title,
+                        description = option.description,
+                        value = (value as? Number)?.toFloat() ?: kind.bounds.min,
+                        min = kind.bounds.min,
+                        max = kind.bounds.max,
+                        step = kind.bounds.step,
+                        isInteger = true,
+                        required = option.required,
+                        onValueChange = { onValueChange(key, it.roundToInt()) }
+                    )
+
+                    is OptionKind.FloatSlider -> SliderOptionInput(
+                        title = option.title,
+                        description = option.description,
+                        value = (value as? Number)?.toFloat() ?: kind.bounds.min,
+                        min = kind.bounds.min,
+                        max = kind.bounds.max,
+                        step = kind.bounds.step,
+                        isInteger = false,
+                        required = option.required,
+                        onValueChange = { onValueChange(key, it) }
+                    )
+
+                    is OptionKind.IntRangeSlider -> RangeSliderOptionInput(
+                        title = option.title,
+                        description = option.description,
+                        value = value.asFloatRange() ?: (kind.bounds.min..kind.bounds.max),
+                        min = kind.bounds.min,
+                        max = kind.bounds.max,
+                        step = kind.bounds.step,
+                        isInteger = true,
+                        required = option.required,
+                        onValueChange = { range ->
+                            onValueChange(key, listOf(range.start.roundToInt(), range.endInclusive.roundToInt()))
+                        }
+                    )
+
+                    is OptionKind.FloatRangeSlider -> RangeSliderOptionInput(
+                        title = option.title,
+                        description = option.description,
+                        value = value.asFloatRange() ?: (kind.bounds.min..kind.bounds.max),
+                        min = kind.bounds.min,
+                        max = kind.bounds.max,
+                        step = kind.bounds.step,
+                        isInteger = false,
+                        required = option.required,
+                        onValueChange = { range ->
+                            onValueChange(key, listOf(range.start, range.endInclusive))
+                        }
                     )
                 }
             }
@@ -1195,50 +1277,6 @@ private fun ListStringItemRow(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun DropdownOptionItem(
-    title: String,
-    description: String,
-    value: String,
-    presets: Map<String, Any?>,
-    onValueChange: (Any?) -> Unit
-) {
-    // Convert presets to String map for dropdown: display name -> value as string
-    val dropdownItems = presets.mapValues { it.value?.toString() ?: "" }
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(Defaults.ContentPaddingSmall)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                color = LocalDialogTextColor.current
-            )
-            if (description.isNotBlank()) {
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LocalDialogSecondaryTextColor.current
-                )
-            }
-        }
-
-        AppDialogDropdownTextField(
-            value = value,
-            onValueChange = { newValue ->
-                // Try to find the actual value from presets by matching the string representation
-                val actualValue = presets.entries.find { it.value?.toString() == newValue }?.value
-                    ?: newValue
-                onValueChange(actualValue)
-            },
-            dropdownItems = dropdownItems
-        )
     }
 }
 

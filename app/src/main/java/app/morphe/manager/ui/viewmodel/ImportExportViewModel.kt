@@ -1,6 +1,5 @@
 package app.morphe.manager.ui.viewmodel
 
-import android.app.ActivityManager
 import android.app.Application
 import android.content.ContentValues
 import android.net.Uri
@@ -21,6 +20,7 @@ import app.morphe.manager.domain.manager.PreferencesManager
 import app.morphe.manager.domain.repository.PatchBundleRepository
 import app.morphe.manager.domain.repository.PatchOptionsRepository
 import app.morphe.manager.domain.repository.PatchSelectionRepository
+import app.morphe.manager.domain.repository.SourceMuteRepository
 import app.morphe.manager.util.*
 import com.github.pgreze.process.Redirect
 import com.github.pgreze.process.process
@@ -70,7 +70,12 @@ data class PatchBundleDataExportFile(
     // Map<PackageName, List<PatchName>>
     val selections: Map<String, List<String>>,
     // Map<PackageName, Map<PatchName, Map<OptionKey, OptionValue>>>
-    val options: Map<String, Map<String, Map<String, String>>>?
+    // Deliberately without a default: the field has always been written out, and giving it one
+    // would drop it from the file for versions that still require it
+    val options: Map<String, Map<String, Map<String, String>>>?,
+    // Apps kept from this source. Null in backups written before an app could be, which reads the
+    // same as a backup where no app was
+    val mutedPackages: List<String>? = null
 )
 
 /**
@@ -98,6 +103,10 @@ data class BundleSnapshot(
     val sortOrder: Int,
     val createdAt: Long? = null,
     val updatedAt: Long? = null,
+    // Prerelease toggle. Null in backups written before per-source toggles were exported
+    val prerelease: Boolean? = null,
+    // Experimental versions toggle. Null in backups written before per-source toggles were exported
+    val experimentalVersions: Boolean? = null
 )
 
 @OptIn(ExperimentalSerializationApi::class)
@@ -107,6 +116,7 @@ class ImportExportViewModel(
     private val preferencesManager: PreferencesManager,
     private val homeAppButtonPreferences: HomeAppButtonPreferences,
     private val patchSelectionRepository: PatchSelectionRepository,
+    private val sourceMuteRepository: SourceMuteRepository,
     private val patchOptionsRepository: PatchOptionsRepository,
     private val patchBundleRepository: PatchBundleRepository
 ) : ViewModel() {
@@ -211,7 +221,7 @@ class ImportExportViewModel(
         uiSafe(app, R.string.settings_system_import_manager_settings_fail, "Failed to import manager settings") {
             val exportFile = withContext(Dispatchers.IO) {
                 contentResolver.openInputStream(source)!!.use {
-                    json.decodeFromStream<ManagerSettingsExportFile>(it)
+                    settingsJson.decodeFromStream<ManagerSettingsExportFile>(it)
                 }
             }
 
@@ -245,7 +255,7 @@ class ImportExportViewModel(
 
             withContext(Dispatchers.IO) {
                 contentResolver.openOutputStream(target, "wt")!!.use { output ->
-                    json.encodeToStream(
+                    settingsJson.encodeToStream(
                         ManagerSettingsExportFile(
                             settings = snapshot.copy(
                                 customBundles = bundles.ifEmpty { null },
@@ -291,13 +301,18 @@ class ImportExportViewModel(
                 mapOf(packageName to patchList) to optionsData
             }
 
+            val muted = withContext(Dispatchers.IO) {
+                bundleUid in sourceMuteRepository.getMutedFor(packageName)
+            }
+
             val exportFile = PatchBundleDataExportFile(
                 bundleUid = bundleUid,
                 bundleName = bundleName,
                 bundleSource = patchBundleRepository.getEndpointForUid(bundleUid),
                 exportDate = DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(LocalDateTime.now()),
                 selections = selections,
-                options = optionsData
+                options = optionsData,
+                mutedPackages = listOf(packageName).takeIf { muted }
             )
 
             withContext(Dispatchers.IO) {
@@ -318,7 +333,12 @@ class ImportExportViewModel(
             val exportDate = DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(LocalDateTime.now())
 
             val bundles = withContext(Dispatchers.IO) {
-                val packagesByBundle = patchSelectionRepository.getAllBundleUids()
+                // A source can be one an app is kept from without anything ever being selected
+                // from it, and that decision is worth restoring on its own
+                val packagesByBundle = (
+                        patchSelectionRepository.getAllBundleUids() +
+                                sourceMuteRepository.getAllBundleUids()
+                        ).distinct()
 
                 packagesByBundle.map { bundleUid ->
                     val selections = patchSelectionRepository.exportAllForBundle(bundleUid)
@@ -334,9 +354,10 @@ class ImportExportViewModel(
                         bundleSource = patchBundleRepository.getEndpointForUid(bundleUid),
                         exportDate = exportDate,
                         selections = selections,
-                        options = options.ifEmpty { null }
+                        options = options.ifEmpty { null },
+                        mutedPackages = sourceMuteRepository.exportForBundle(bundleUid).ifEmpty { null }
                     )
-                }.filter { it.selections.isNotEmpty() }
+                }.filter { it.selections.isNotEmpty() || it.mutedPackages != null }
             }
 
             val exportFile = AllSelectionsExportFile(
@@ -410,10 +431,14 @@ class ImportExportViewModel(
                 // Replace mode: clear selections/options for bundles that currently have data
                 // but are not represented in the backup
                 if (mode == PatchBundleRepository.ImportMode.Replace) {
-                    val existingUids = patchSelectionRepository.getAllBundleUids().toSet()
+                    val existingUids = (
+                            patchSelectionRepository.getAllBundleUids() +
+                                    sourceMuteRepository.getAllBundleUids()
+                            ).toSet()
                     (existingUids - incomingUids).forEach { uid ->
                         patchSelectionRepository.import(uid, emptyMap())
                         patchOptionsRepository.resetOptionsForPatchBundle(uid)
+                        sourceMuteRepository.resetForBundle(uid)
                     }
                 }
 
@@ -434,6 +459,10 @@ class ImportExportViewModel(
                                     options = packageOptions
                                 )
                             }
+                            sourceMuteRepository.importForBundle(
+                                bundleUid,
+                                exportFile.mutedPackages.orEmpty()
+                            )
                         }
                         PatchBundleRepository.ImportMode.Merge -> {
                             exportFile.selections.forEach { (packageName, patchList) ->
@@ -449,6 +478,9 @@ class ImportExportViewModel(
                                     bundleUid = bundleUid,
                                     options = packageOptions
                                 )
+                            }
+                            exportFile.mutedPackages?.let {
+                                sourceMuteRepository.mergeForBundle(bundleUid, it)
                             }
                         }
                     }
@@ -491,24 +523,28 @@ class ImportExportViewModel(
         writer.write("ABI        : ${Build.SUPPORTED_ABIS.joinToString()}\n")
         writer.write("Locale     : ${Locale.getDefault().toLanguageTag()}\n")
 
+        val stats = app.deviceStats()
+        val toMb = ::bytesToMebibytes
+
         writer.write("\n--- Memory ---\n")
-        val activityManager = app.getSystemService(ActivityManager::class.java)
-        val memInfo = ActivityManager.MemoryInfo().also { activityManager.getMemoryInfo(it) }
-        val toMb = { bytes: Long -> bytes / 1024 / 1024 }
-        writer.write("RAM avail  : ${toMb(memInfo.availMem)} MB / ${toMb(memInfo.totalMem)} MB\n")
-        writer.write("Low memory : ${memInfo.lowMemory}\n")
-        writer.write("Low mem thr: ${toMb(memInfo.threshold)} MB\n")
+        if (stats == null) {
+            writer.write("Unavailable\n")
+        } else {
+            writer.write("RAM avail  : ${toMb(stats.ramAvailable)} MB / ${toMb(stats.ramTotal)} MB\n")
+            writer.write("Low memory : ${stats.lowMemory}\n")
+            writer.write("Low mem thr: ${toMb(stats.lowMemoryThreshold)} MB\n")
+        }
 
         writer.write("\n--- Storage ---\n")
-        val internalDir = app.filesDir
-        val toMbL = { bytes: Long -> bytes / 1024 / 1024 }
-        writer.write("Internal   : ${toMbL(internalDir.freeSpace)} MB free / ${toMbL(internalDir.totalSpace)} MB total\n")
+        if (stats != null) {
+            writer.write("Internal   : ${formatBytesForReport(stats.storageAvailable)} free / ${formatBytesForReport(stats.storageTotal)} total\n")
+        }
         var sdCardIndex = 1
         app.externalStorageVolumes().forEach { (isPrimary, root) ->
             if (isPrimary) {
-                writer.write("External   : ${toMbL(root.freeSpace)} MB free / ${toMbL(root.totalSpace)} MB total\n")
+                writer.write("External   : ${formatBytesForReport(root.freeSpace)} free / ${formatBytesForReport(root.totalSpace)} total\n")
             } else {
-                writer.write("SD Card $sdCardIndex  : ${toMbL(root.freeSpace)} MB free / ${toMbL(root.totalSpace)} MB total\n")
+                writer.write("SD Card $sdCardIndex  : ${formatBytesForReport(root.freeSpace)} free / ${formatBytesForReport(root.totalSpace)} total\n")
                 sdCardIndex++
             }
         }
@@ -604,7 +640,7 @@ class ImportExportViewModel(
                 val stream = openDownloadsOutputStream("morphe_manager_settings.json", JSON_MIMETYPE)
                     ?: throw IllegalStateException("Cannot open Downloads output stream")
                 stream.use {
-                    json.encodeToStream(
+                    settingsJson.encodeToStream(
                         ManagerSettingsExportFile(
                             settings = snapshot.copy(
                                 customBundles = bundles.ifEmpty { null },
@@ -635,14 +671,21 @@ class ImportExportViewModel(
         cancelKeystoreImport()
     }
 
-    private companion object {
-        // Reusable JSON instances to avoid redundant creation
-        private val json = Json {
+    companion object {
+        // Reusable JSON instances to avoid redundant creation. Both are internal so the export
+        // format stays under test instead of the tests rebuilding their own configuration
+        internal val json = Json {
             ignoreUnknownKeys = true
             prettyPrint = true // Make exports human-readable
         }
 
-        val knownPasswords = arrayOf("Morphe", "s3cur3p@ssw0rd")
-        val aliases = arrayOf(KeystoreManager.DEFAULT, "alias", "Morphe Key")
+        /**
+         * Settings exports omit unset fields instead of writing a wall of nulls. Every field in
+         * that file has a default, so older manager versions still read the trimmed form.
+         */
+        internal val settingsJson = Json(json) { explicitNulls = false }
+
+        private val knownPasswords = arrayOf("Morphe", "s3cur3p@ssw0rd")
+        private val aliases = arrayOf(KeystoreManager.DEFAULT, "alias", "Morphe Key")
     }
 }

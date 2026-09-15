@@ -18,6 +18,7 @@ import app.morphe.manager.ui.model.State
 import app.morphe.manager.util.Options
 import app.morphe.manager.util.PM
 import app.morphe.manager.util.PatchSelection
+import app.morphe.manager.util.bytesToMebibytes
 import app.morphe.manager.util.tag
 import com.github.pgreze.process.Redirect
 import com.github.pgreze.process.process
@@ -25,28 +26,58 @@ import kotlinx.coroutines.*
 import org.koin.core.component.inject
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.math.max
 import kotlin.time.Duration.Companion.seconds
 
-// Max memory value. Slightly higher values may work for some devices
+// Memory value that is safe everywhere. Slightly higher values may work for some devices
 // but patching YT is the same time with both 1024 and 1600 memory.
 // If too much memory is requested then some devices become extremely slow
 // for unknown reason (using flash memory as swap file?)
 const val PROCESS_RUNTIME_MEMORY_MINIMUM = 512
 const val PROCESS_RUNTIME_MEMORY_MAX_LIMIT = 1280
-const val PROCESS_RUNTIME_MEMORY_MAX_LIMIT_INITIALIZATION = 1024
+private const val PROCESS_RUNTIME_MEMORY_MAX_LIMIT_INITIALIZATION = 1024
 private const val PROCESS_RUNTIME_MEMORY_DEFAULT_MINIMUM = 640
 const val PROCESS_RUNTIME_MEMORY_LOW_WARNING = 640
 const val PROCESS_RUNTIME_MEMORY_STEP = 128
+
+// Apps carrying tens of thousands of classes across splits need more than the safe maximum to
+// patch at all. The slowdown above it is real, so this range is offered under a warning, only
+// where a heap this size can be mapped, and never as a default
+private const val PROCESS_RUNTIME_MEMORY_EXTENDED_LIMIT = 2048
+
+// Two steps at a time above the safe maximum. A run started up there has the whole extended
+// range to cross before the device can hold it, and every retry patches the app from scratch
+private const val PROCESS_RUNTIME_MEMORY_EXTENDED_STEP = 256
+
+// Every retry patches the app again from the beginning, so a long ladder of them costs the
+// user minutes of work and a hot device for an outcome that keeps getting less likely
+const val PROCESS_RUNTIME_MEMORY_MAX_RETRIES = 2
 
 // Sentinel value indicating the memory limit has never been set
 // triggers adaptive calculation on first use
 const val PROCESS_RUNTIME_MEMORY_NOT_SET = -1
 
 /**
- * Calculates an adaptive memory limit based on total device RAM.
- * Uses ~25% of total RAM, rounded to the nearest [PROCESS_RUNTIME_MEMORY_STEP],
- * clamped between [PROCESS_RUNTIME_MEMORY_DEFAULT_MINIMUM] and [PROCESS_RUNTIME_MEMORY_MAX_LIMIT].
+ * The share of total device RAM the patcher may take, rounded down to a whole
+ * [PROCESS_RUNTIME_MEMORY_STEP] so every limit derived from it lands on a value the slider shows.
+ */
+private fun deviceMemoryShare(context: Context): Int {
+    val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+    val memInfo = android.app.ActivityManager.MemoryInfo()
+    activityManager.getMemoryInfo(memInfo)
+
+    val totalRamMb = bytesToMebibytes(memInfo.totalMem).toInt()
+    return ((totalRamMb * 0.25).toInt() / PROCESS_RUNTIME_MEMORY_STEP) * PROCESS_RUNTIME_MEMORY_STEP
+}
+
+/**
+ * Whether the manager runs as a 64-bit process. A 32-bit app_process has nowhere near enough
+ * address space for an extended heap, and asking it for one only fails later and slower.
+ */
+private fun is64BitRuntime(context: Context) = context.applicationInfo.nativeLibraryDir.contains("64")
+
+/**
+ * Calculates an adaptive memory limit based on total device RAM, clamped between
+ * [PROCESS_RUNTIME_MEMORY_DEFAULT_MINIMUM] and [PROCESS_RUNTIME_MEMORY_MAX_LIMIT].
  *
  * Example results:
  *  2 GB RAM  → 640 MB
@@ -54,15 +85,53 @@ const val PROCESS_RUNTIME_MEMORY_NOT_SET = -1
  *  4 GB RAM  → 1024 MB
  *  6 GB+ RAM → 1280 MB (capped)
  */
-fun calculateAdaptiveMemoryLimit(context: Context): Int {
-    val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-    val memInfo = android.app.ActivityManager.MemoryInfo()
-    activityManager.getMemoryInfo(memInfo)
+fun calculateAdaptiveMemoryLimit(context: Context) = deviceMemoryShare(context)
+    .coerceIn(PROCESS_RUNTIME_MEMORY_DEFAULT_MINIMUM, PROCESS_RUNTIME_MEMORY_MAX_LIMIT)
 
-    val totalRamMb = (memInfo.totalMem / (1024 * 1024)).toInt()
-    val adaptive = ((totalRamMb * 0.25).toInt() / PROCESS_RUNTIME_MEMORY_STEP) * PROCESS_RUNTIME_MEMORY_STEP
+/**
+ * The limit stored on first launch. Held below the safe maximum so the value a device starts
+ * with stays conservative no matter how much RAM it reports.
+ */
+fun initialMemoryLimit(context: Context) =
+    calculateAdaptiveMemoryLimit(context).coerceAtMost(PROCESS_RUNTIME_MEMORY_MAX_LIMIT_INITIALIZATION)
 
-    return adaptive.coerceIn(PROCESS_RUNTIME_MEMORY_DEFAULT_MINIMUM, PROCESS_RUNTIME_MEMORY_MAX_LIMIT)
+/**
+ * Whether the extended range is offered at all. A heap that large needs a 64-bit address space,
+ * and the props carrying the limit are only overridden on Android 11 and later, which is also
+ * where a killed process is retried with less instead of simply failing.
+ */
+private fun supportsExtendedMemoryLimit(context: Context) =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && is64BitRuntime(context)
+
+/**
+ * The highest limit this device may be configured with. Devices that can hold a larger heap
+ * reach into the extended range as far as their RAM allows, the rest stop at the safe maximum.
+ */
+fun maxMemoryLimit(context: Context) = deviceMemoryShare(context).coerceIn(
+    PROCESS_RUNTIME_MEMORY_MAX_LIMIT_INITIALIZATION,
+    if (supportsExtendedMemoryLimit(context)) PROCESS_RUNTIME_MEMORY_EXTENDED_LIMIT
+    else PROCESS_RUNTIME_MEMORY_MAX_LIMIT
+)
+
+/**
+ * Whether a limit is past the point where devices have been seen to crawl, which is what the
+ * setting warns about and what makes the retry ladder take larger steps.
+ */
+fun isExtendedMemoryLimit(limit: Int) = limit > PROCESS_RUNTIME_MEMORY_MAX_LIMIT
+
+/** Clamps a stored limit to what this device can be asked for, whatever an import carried. */
+fun coerceMemoryLimit(context: Context, limit: Int) =
+    limit.coerceIn(PROCESS_RUNTIME_MEMORY_MINIMUM, maxMemoryLimit(context))
+
+/**
+ * The limit to fall back to after a kill: one slider step down, or two in the extended range,
+ * where a single step barely changes the footprint.
+ */
+fun lowerMemoryLimit(limit: Int): Int {
+    val step = if (isExtendedMemoryLimit(limit)) PROCESS_RUNTIME_MEMORY_EXTENDED_STEP
+    else PROCESS_RUNTIME_MEMORY_STEP
+
+    return (limit - step).coerceAtLeast(PROCESS_RUNTIME_MEMORY_MINIMUM)
 }
 
 /**
@@ -109,10 +178,11 @@ class ProcessRuntime(
         onPatchCompleted: suspend (String) -> Unit,
         onProgress: ProgressEventHandler,
         skipUnneededSplits: Boolean,
-        onMergedApkReady: (suspend (File) -> Unit)?
+        onMergedApkReady: (suspend (File) -> Unit)?,
+        onRestart: suspend () -> Unit
     ) = coroutineScope {
-        val minMemoryLimit = 256
-        var memoryMB = max(minMemoryLimit, prefs.patcherProcessMemoryLimit.get())
+        var memoryMB = coerceMemoryLimit(context, prefs.patcherProcessMemoryLimit.get())
+        var retries = 0
 
         while (true) {
             try {
@@ -132,21 +202,47 @@ class ProcessRuntime(
 
                 return@coroutineScope
             } catch (e: Exception) {
-                val isMemoryFailure = when (e) {
-                    is ProcessExitException -> e.exitCode == OOM_EXIT_CODE || e.exitCode == SIGKILL_EXIT_CODE || e.exitCode == SIGSEGV_EXIT_CODE
-                    is RemoteFailureException -> e.originalStackTrace.contains("OutOfMemoryError", ignoreCase = true)
-                    else -> false
-                }
+                val nextMemoryMB = lowerMemoryLimit(memoryMB)
+                val retry = e.isReclaimableMemoryFailure() &&
+                        !skipMemoryRetry &&
+                        retries < PROCESS_RUNTIME_MEMORY_MAX_RETRIES &&
+                        nextMemoryMB < memoryMB
 
-                if (isMemoryFailure && !skipMemoryRetry && memoryMB > minMemoryLimit) {
-                    memoryMB -= PROCESS_RUNTIME_MEMORY_STEP
-                    Log.i(tag, "Process memory limit failed, retrying with: $memoryMB")
-                    continue
-                }
-                throw e
+                if (!retry) throw e.withHeapExhaustionReported(memoryMB)
+
+                memoryMB = nextMemoryMB
+                retries++
+                Log.i(tag, "Process memory limit failed, retrying with: $memoryMB")
+                logger.warn(
+                    "Patcher process was killed, restarting with a ${memoryMB}MB heap " +
+                            "(attempt ${retries + 1} of ${PROCESS_RUNTIME_MEMORY_MAX_RETRIES + 1})"
+                )
+                // The attempt that just died reported patches and steps of its own. Everything
+                // the next one reports starts from zero, so the listener has to as well
+                onRestart()
             }
         }
     }
+
+    /**
+     * Whether a smaller heap stands a chance. These are kills from the outside: the pressure
+     * came from the system, and giving the process less to hold makes it a smaller target.
+     */
+    private fun Exception.isReclaimableMemoryFailure() = this is ProcessExitException &&
+            (exitCode == OOM_EXIT_CODE || exitCode == SIGKILL_EXIT_CODE || exitCode == SIGSEGV_EXIT_CODE)
+
+    /**
+     * Restates a heap the patcher filled on its own as [HeapExhaustedException]. Shrinking that
+     * heap only reaches the same wall sooner, so it is reported rather than retried.
+     */
+    private fun Exception.withHeapExhaustionReported(memoryMB: Int) =
+        if (this is RemoteFailureException &&
+            originalStackTrace.contains("OutOfMemoryError", ignoreCase = true)
+        ) {
+            HeapExhaustedException(memoryMB, originalStackTrace)
+        } else {
+            this
+        }
 
     private suspend fun executeWithMemory(
         memoryLimit: Int,
@@ -207,7 +303,7 @@ class ProcessRuntime(
 
             Log.d(tag, "Process finished with exit code ${result.resultCode}")
 
-            if (result.resultCode != 0) throw ProcessExitException(result.resultCode)
+            if (result.resultCode != 0) throw ProcessExitException(result.resultCode, memoryLimit)
         }
 
         val patching = CompletableDeferred<Unit>()
@@ -306,14 +402,17 @@ class ProcessRuntime(
         const val SIGKILL_EXIT_CODE = 137
         const val SIGSEGV_EXIT_CODE = 139
 
+        // The kernel kills a process over a system call the seccomp policy for apps forbids,
+        // which firmware can drag in on its own, so such a run belongs in the app's own process
+        const val SIGSYS_EXIT_CODE = 159
+
         const val CONNECT_TO_APP_ACTION = "CONNECT_TO_APP_ACTION"
         const val INTENT_BUNDLE_KEY = "BUNDLE"
         const val BUNDLE_BINDER_KEY = "BINDER"
 
         private fun resolvePropOverride(context: Context) = findPropOverrideLibrary(context)
         private fun resolveAppProcessBin(context: Context): String {
-            val is64Bit = context.applicationInfo.nativeLibraryDir.contains("64")
-            val preferred = if (is64Bit) APP_PROCESS_BIN_PATH_64 else APP_PROCESS_BIN_PATH_32
+            val preferred = if (is64BitRuntime(context)) APP_PROCESS_BIN_PATH_64 else APP_PROCESS_BIN_PATH_32
             return if (File(preferred).exists()) preferred else APP_PROCESS_BIN_PATH
         }
     }
@@ -325,6 +424,21 @@ class ProcessRuntime(
      */
     class RemoteFailureException(val originalStackTrace: String) : Exception()
 
-    class ProcessExitException(val exitCode: Int) :
+    /**
+     * @param exitCode The nonzero code the patcher process exited with.
+     * @param heapLimitMb The limit the killed attempt ran with, which is not the stored setting
+     *                    once the memory retries have lowered it.
+     */
+    class ProcessExitException(val exitCode: Int, val heapLimitMb: Int) :
         Exception("Process exited with nonzero exit code $exitCode")
+
+    /**
+     * The patcher ran out of the heap it was given, which no smaller heap can fix. Carries the
+     * limit that was in effect so the failure can name the number the user set.
+     *
+     * @param heapLimitMb The heap limit the run was given, in megabytes.
+     * @param originalStackTrace The stack trace of the [OutOfMemoryError].
+     */
+    class HeapExhaustedException(val heapLimitMb: Int, val originalStackTrace: String) :
+        Exception("Patcher exhausted its ${heapLimitMb}MB heap")
 }

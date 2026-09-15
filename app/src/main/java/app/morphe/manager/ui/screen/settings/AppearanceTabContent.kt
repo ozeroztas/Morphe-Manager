@@ -37,6 +37,7 @@ import app.morphe.manager.ui.screen.shared.LanguageRepository.getLanguageDisplay
 import app.morphe.manager.ui.theme.Theme
 import app.morphe.manager.ui.theme.ThemeStyle
 import app.morphe.manager.ui.theme.resolveThemeStyle
+import app.morphe.manager.ui.theme.toUiScalePercent
 import app.morphe.manager.ui.viewmodel.RandomInterval
 import app.morphe.manager.ui.viewmodel.ThemeSettingsViewModel
 import app.morphe.manager.util.AppCardColorDefaults
@@ -68,17 +69,23 @@ fun AppearanceTabContent(
     val supportsDynamicColor = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val appLanguage by themeViewModel.prefs.appLanguage.getAsState()
     val showGreetingPhrases by themeViewModel.prefs.showGreetingPhrases.getAsState()
+    val showRepatchNotice by themeViewModel.prefs.showRepatchNotice.getAsState()
     val appCardColorMode by themeViewModel.prefs.appCardColorMode.getAsState()
     val customAppCardColors by themeViewModel.prefs.customAppCardColors.getAsState()
     val showAppGroupingSwitcher by homeAppButtonPrefs.showCategoryViewSwitcher.collectAsStateWithLifecycle()
     val showSortButton by homeAppButtonPrefs.showSortButton.collectAsStateWithLifecycle()
+    val groupPatchesByCategory by themeViewModel.prefs.groupPatchesByCategory.getAsState()
     val backgroundType by themeViewModel.prefs.backgroundType.getAsState()
     val enableParallax by themeViewModel.prefs.enableBackgroundParallax.getAsState()
     val randomInterval by themeViewModel.prefs.randomBackgroundInterval.getAsState()
+    val matrixUnlocked by themeViewModel.prefs.matrixBackgroundUnlocked.getAsState()
     val effectiveThemeStyle = resolveThemeStyle(themeStyle, supportsDynamicColor)
     val showAppCardColorSetting = effectiveThemeStyle != ThemeStyle.MONOCHROME
 
+    val uiScale by themeViewModel.prefs.uiScale.getAsState()
+
     val showLanguageDialog = remember { mutableStateOf(false) }
+    val showUiScaleDialog = remember { mutableStateOf(false) }
     val showTranslationInfoDialog = remember { mutableStateOf(false) }
     val showAppCardColorDialog = remember { mutableStateOf(false) }
     val appCardColorValues = remember(customAppCardColors) {
@@ -103,9 +110,11 @@ fun AppearanceTabContent(
             .verticalScroll(scrollState)
             .padding(horizontal = contentPadding, vertical = Defaults.ContentPadding)
     ) {
-        LanguageSection(
+        LanguageAndDisplaySection(
             appLanguage = appLanguage,
-            onLanguageClick = { showTranslationInfoDialog.value = true }
+            uiScale = uiScale,
+            onLanguageClick = { showTranslationInfoDialog.value = true },
+            onUiScaleClick = { showUiScaleDialog.value = true }
         )
 
         ThemeSection(
@@ -132,17 +141,27 @@ fun AppearanceTabContent(
 
         HomeScreenSection(
             showGreetingPhrases = showGreetingPhrases,
+            showRepatchNotice = showRepatchNotice,
             showSortButton = showSortButton,
             showAppGrouping = showAppGroupingSwitcher,
             onGreetingPhrasesToggle = { themeViewModel.toggleShowGreetingPhrases(showGreetingPhrases) },
+            onRepatchNoticeToggle = { themeViewModel.toggleShowRepatchNotice(showRepatchNotice) },
             onSortButtonToggle = { homeAppButtonPrefs.setShowSortButton(!showSortButton) },
             onAppGroupingToggle = { homeAppButtonPrefs.setShowCategoryViewSwitcher(!showAppGroupingSwitcher) }
+        )
+
+        PatchListSection(
+            groupByCategory = groupPatchesByCategory,
+            onGroupByCategoryToggle = {
+                themeViewModel.toggleGroupPatchesByCategory(groupPatchesByCategory)
+            }
         )
 
         BackgroundSection(
             backgroundType = backgroundType,
             randomInterval = randomInterval,
             enableParallax = enableParallax,
+            matrixUnlocked = matrixUnlocked,
             onBackgroundSelected = themeViewModel::setBackgroundType,
             onIntervalSelected = themeViewModel::setRandomInterval,
             onParallaxToggle = { themeViewModel.toggleBackgroundParallax(enableParallax) }
@@ -166,6 +185,26 @@ fun AppearanceTabContent(
             solidColorHex = appCardColorValues.solidHex,
             onApply = themeViewModel::applyAppCardColors,
             onDismiss = { showAppCardColorDialog.value = false }
+        )
+    }
+
+    // Interface scale dialog
+    AnimatedVisibility(
+        visible = showUiScaleDialog.value,
+        enter = Animations.fadeIn,
+        exit = Animations.fadeOut
+    ) {
+        UiScaleDialog(
+            currentScale = uiScale,
+            // The scale lives on the activity context, so it takes effect on the next attach.
+            // To write has to land first, or that attach would read the previous value
+            onApply = { scale ->
+                scope.launch {
+                    themeViewModel.setUiScale(scale).join()
+                    (context as? Activity)?.recreate()
+                }
+            },
+            onDismiss = { showUiScaleDialog.value = false }
         )
     }
 
@@ -212,12 +251,15 @@ fun AppearanceTabContent(
 }
 
 /**
- * Language selection section.
+ * How the app presents itself before any styling: the language it speaks and the scale it is
+ * drawn at.
  */
 @Composable
-private fun LanguageSection(
+private fun LanguageAndDisplaySection(
     appLanguage: String,
-    onLanguageClick: () -> Unit
+    uiScale: Float,
+    onLanguageClick: () -> Unit,
+    onUiScaleClick: () -> Unit
 ) {
     val context = LocalContext.current
     val currentLanguage = remember(appLanguage, context) {
@@ -231,7 +273,7 @@ private fun LanguageSection(
 
     Column(verticalArrangement = Arrangement.spacedBy(Defaults.ContentPadding)) {
         SectionTitle(
-            text = stringResource(R.string.settings_appearance_app_language),
+            text = stringResource(R.string.settings_appearance_language_and_display),
             icon = Icons.Outlined.Language
         )
 
@@ -252,6 +294,13 @@ private fun LanguageSection(
                         )
                     }
                 }
+            )
+            SettingsDivider()
+            SettingsItem(
+                onClick = onUiScaleClick,
+                title = stringResource(R.string.settings_appearance_ui_scale),
+                subtitle = "${uiScale.toUiScalePercent()}%",
+                leadingContent = { ThemedIcon(icon = Icons.Outlined.FormatSize) }
             )
         }
     }
@@ -376,9 +425,11 @@ private fun ColorsSection(
 @Composable
 private fun HomeScreenSection(
     showGreetingPhrases: Boolean,
+    showRepatchNotice: Boolean,
     showSortButton: Boolean,
     showAppGrouping: Boolean,
     onGreetingPhrasesToggle: () -> Unit,
+    onRepatchNoticeToggle: () -> Unit,
     onSortButtonToggle: () -> Unit,
     onAppGroupingToggle: () -> Unit
 ) {
@@ -394,6 +445,14 @@ private fun HomeScreenSection(
             icon = Icons.Outlined.ChatBubbleOutline,
             checked = showGreetingPhrases,
             onToggle = onGreetingPhrasesToggle
+        )
+        SettingsDivider()
+        SettingsSwitchItem(
+            title = stringResource(R.string.settings_appearance_repatch_notice),
+            subtitle = stringResource(R.string.settings_appearance_repatch_notice_description),
+            icon = Icons.Outlined.AutoFixHigh,
+            checked = showRepatchNotice,
+            onToggle = onRepatchNoticeToggle
         )
         SettingsDivider()
         SettingsSwitchItem(
@@ -415,6 +474,30 @@ private fun HomeScreenSection(
 }
 
 /**
+ * Toggles for how patch lists are laid out.
+ */
+@Composable
+private fun PatchListSection(
+    groupByCategory: Boolean,
+    onGroupByCategoryToggle: () -> Unit
+) {
+    SectionHeader(
+        text = stringResource(R.string.settings_appearance_patch_list),
+        icon = Icons.Outlined.Extension
+    )
+
+    SettingsGroup(modifier = Modifier.padding(bottom = Defaults.ContentPadding)) {
+        SettingsSwitchItem(
+            title = stringResource(R.string.settings_appearance_patch_categories),
+            subtitle = stringResource(R.string.settings_appearance_patch_categories_description),
+            icon = Icons.Outlined.Category,
+            checked = groupByCategory,
+            onToggle = onGroupByCategoryToggle
+        )
+    }
+}
+
+/**
  * Background picker and the parallax toggle it enables.
  */
 @Composable
@@ -422,6 +505,7 @@ private fun BackgroundSection(
     backgroundType: BackgroundType,
     randomInterval: RandomInterval,
     enableParallax: Boolean,
+    matrixUnlocked: Boolean,
     onBackgroundSelected: (BackgroundType) -> Unit,
     onIntervalSelected: (RandomInterval) -> Unit,
     onParallaxToggle: () -> Unit
@@ -436,7 +520,8 @@ private fun BackgroundSection(
             selectedBackground = backgroundType,
             onBackgroundSelected = onBackgroundSelected,
             selectedInterval = randomInterval,
-            onIntervalSelected = onIntervalSelected
+            onIntervalSelected = onIntervalSelected,
+            matrixUnlocked = matrixUnlocked
         )
     }
 

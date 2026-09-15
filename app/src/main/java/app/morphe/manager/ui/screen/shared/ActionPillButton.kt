@@ -14,7 +14,6 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.semantics.Role
@@ -24,8 +23,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.morphe.manager.util.readableOn
 
-private val PillShape = RoundedCornerShape(50)
+private val PillShape = Defaults.PillShape
 
 /**
  * Pill-shaped action button with an icon, optional text label, and optional long-press tooltip.
@@ -44,17 +44,19 @@ fun ActionPillButton(
     colors: IconButtonColors = IconButtonDefaults.filledTonalIconButtonColors(),
     pressScale: Boolean = true
 ) {
-    val height = if (large) 40.dp else 36.dp
+    val height = if (large) Defaults.PillHeightLarge else Defaults.PillHeight
     val minWidth = if (large) 80.dp else 72.dp
     val iconSize = if (large) 20.dp else 18.dp
     val textStyle = if (large) MaterialTheme.typography.labelLarge else MaterialTheme.typography.labelSmall
 
     val interactionSource = remember { MutableInteractionSource() }
-    val scale = rememberPressScale(
-        interactionSource = interactionSource,
-        enabled = pressScale && enabled,
-        label = "action_pill_press_scale"
-    )
+
+    // These fills are tinted translucent, so the palette's own pairing describes a background
+    // that never gets drawn and the content has to be checked against the real one
+    val surface = MaterialTheme.colorScheme.surface
+    val containerColor = if (enabled) colors.containerColor else colors.disabledContainerColor
+    val contentColor = (if (enabled) colors.contentColor else colors.disabledContentColor)
+        .readableOn(containerColor, surface)
 
     // Surface rather than FilledTonalIconButton: the latter always centers its content in a
     // fixed icon-sized box, so a labeled pill can never measure itself against its own text
@@ -63,13 +65,17 @@ fun ActionPillButton(
             onClick = onClick,
             enabled = enabled,
             shape = PillShape,
-            color = if (enabled) colors.containerColor else colors.disabledContainerColor,
-            contentColor = if (enabled) colors.contentColor else colors.disabledContentColor,
+            color = containerColor,
+            contentColor = contentColor,
             interactionSource = interactionSource,
             modifier = outerModifier
                 .height(height)
                 .widthIn(min = minWidth)
-                .graphicsLayer { scaleX = scale; scaleY = scale }
+                .pressScale(
+                    interactionSource = interactionSource,
+                    enabled = pressScale && enabled,
+                    label = "action_pill_press_scale"
+                )
                 .semantics { role = Role.Button }
         ) {
             Box(contentAlignment = Alignment.Center) {

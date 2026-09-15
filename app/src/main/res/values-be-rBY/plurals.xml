@@ -66,12 +66,6 @@
         <item quantity="many">%s праграм, гатовых да патчынгу</item>
         <item quantity="other">%s праграм, гатовых да патчынгу</item>
     </plurals>
-    <plurals name="batch_patch_notification_ready">
-        <item quantity="one">%s праграма, гатовая да ўсталёўкі</item>
-        <item quantity="few">%s праграмы, гатовыя да ўсталёўкі</item>
-        <item quantity="many">%s праграм, гатовых да ўсталёўкі</item>
-        <item quantity="other">%s праграм, гатовых да ўсталёўкі</item>
-    </plurals>
     <plurals name="batch_skipped_summary">
         <item quantity="one">Прапушчана %s праграма</item>
         <item quantity="few">Прапушчана %s праграмы</item>
@@ -89,12 +83,6 @@
         <item quantity="few">%s крыніцы ўсталявана</item>
         <item quantity="many">%s крыніц ўсталявана</item>
         <item quantity="other">%s крыніц ўсталявана</item>
-    </plurals>
-    <plurals name="patch_selection_total_patches">
-        <item quantity="one">%s патч выбраны</item>
-        <item quantity="few">%s патча выбрана</item>
-        <item quantity="many">%s патчаў выбрана</item>
-        <item quantity="other">%s патчаў выбрана</item>
     </plurals>
     <plurals name="home_app_show_hidden_count">
         <item quantity="one">%s схаваная праграма</item>

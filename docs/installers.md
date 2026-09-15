@@ -40,17 +40,17 @@ here.
 
 ### Shizuku
 
-Installs silently through [Shizuku](https://shizuku.rikka.app/) or Sui, with no confirmation
-dialog at all. Shizuku has to be installed, running, and have granted Morphe permission,
-Morphe tells you which of those is missing.
+Installs silently through [Shizuku](https://shizuku.rikka.app/), Shizuku+ or Sui, with no
+confirmation dialog at all. One of them has to be installed, running, and have granted Morphe
+permission, Morphe tells you which of those is missing.
 
 <p align="center">
   <img src="images/installers/02-shizuku-options.jpg" width="320" alt="Shizuku selected with its extra options" />
 </p>
 
-**Check Shizuku status** opens a breakdown of the current state: mode (Shizuku or Sui),
-whether it is installed, supported, and running, and whether permission is granted, with
-buttons to request permission or open the Shizuku app.
+**Check Shizuku status** opens a breakdown of the current state: the mode and the provider it
+came from, whether it is installed, supported, and running, and whether permission is granted,
+with buttons to request permission or open the Shizuku app.
 
 ### Third-party installers
 
@@ -77,8 +77,11 @@ Morphe shows this warning and asks you to confirm before enabling the option.
 
 ### Auto-install after patching
 
-Shizuku only. The patched APK is installed the moment patching finishes, without you
-returning to the app.
+The patched APK is installed the moment patching finishes, without you returning to the app.
+Shizuku does this for any install. The system installer manages it only where Android lets
+Morphe update an app it installed itself, which means replacing a build Morphe put there,
+with the same signature and no installer prompt in the way. Anything else still opens the
+usual confirmation.
 
 ### Auto-uninstall on conflict
 
@@ -89,6 +92,15 @@ patched one.
 > [!WARNING]
 > This erases that app's data. If the patched APK then fails to install for another reason,
 > the previous app is already gone.
+
+### Install anyway
+
+Rooted devices only. The signature conflict dialog offers **Install anyway** next to
+**Uninstall**, which installs over the existing app and keeps its data.
+
+Root alone is not enough for this to succeed. Android still verifies the certificate, so the
+install only goes through on devices running a module that patches that verification out of the
+framework. Without one, the install is rejected and the conflict dialog comes back.
 
 ### Installer selection prompt
 
@@ -162,7 +174,7 @@ with a **Mount** chip and offers **Remount** and **Unmount**, an unmounted one o
 
 | Problem | What to do |
 | --- | --- |
-| "Uninstall required" or a signature conflict | The unpatched app is still installed. Uninstall it, which erases its data, or use root mount instead |
+| "Uninstall required" or a signature conflict | The unpatched app is still installed. Uninstall it, which erases its data, or use root mount instead. On rooted devices you can also try **Install anyway** |
 | Shizuku option is greyed out | Shizuku or Sui is not installed, not running, or has not granted Morphe permission. **Check Shizuku status** shows which |
 | "Your preferred installer is unavailable" | Fix the underlying issue and retry, or let Morphe fall back to the standard installer |
 | Play Store replaced the patched app with the original | Turn off updates for that app on its Play Store page, then patch and install again |

@@ -93,45 +93,6 @@ class PatchOptionsRepository(db: AppDatabase) {
     }
 
     /**
-     * Get options for a package - returns combined data from all bundles
-     * @deprecated Use getOptionsForBundle or getAllOptionsForPackage instead
-     */
-    @Deprecated(
-        "Use getOptionsForBundle for bundle-specific options or getAllOptionsForPackage for all bundles",
-        ReplaceWith("getAllOptionsForPackage(packageName, bundlePatches)")
-    )
-    suspend fun getOptions(
-        packageName: String,
-        bundlePatches: Map<Int, Map<String, PatchInfo>>
-    ): Options = getAllOptionsForPackage(packageName, bundlePatches)
-
-    /**
-     * Save options for a specific bundle and package
-     */
-    suspend fun saveOptionsForBundle(
-        packageName: String,
-        bundleUid: Int,
-        patchOptions: Map<String, Map<String, Any?>>
-    ) {
-        val groupId = getOrCreateGroup(bundleUid, packageName)
-
-        val optionsList = patchOptions.flatMap { (patchName, options) ->
-            options.mapNotNull { (key, value) ->
-                val serialized = try {
-                    Option.SerializedValue.fromValue(value)
-                } catch (e: Option.SerializationException) {
-                    Log.e(tag, "Option $patchName:$key could not be serialized", e)
-                    return@mapNotNull null
-                }
-
-                Option(groupId, patchName, key, serialized)
-            }
-        }
-
-        dao.updateOptionsForGroup(groupId, optionsList)
-    }
-
-    /**
      * Save options for multiple bundles for a package
      */
     suspend fun saveOptions(packageName: String, options: Options) =
@@ -157,20 +118,6 @@ class PatchOptionsRepository(db: AppDatabase) {
      */
     fun getPackagesWithSavedOptions() =
         dao.getPackagesWithOptions().map(Iterable<String>::toSet).distinctUntilChanged()
-
-    /**
-     * Get all packages that have saved options for a specific bundle
-     */
-    fun getPackagesWithSavedOptionsForBundle(bundleUid: Int) =
-        dao.getPackagesWithOptionsForBundle(bundleUid).map(Iterable<String>::toSet).distinctUntilChanged()
-
-    /**
-     * Get summary of options per bundle+package
-     * Returns: Map<PackageName, Map<BundleUid, OptionCount>>
-     */
-    suspend fun getOptionsSummary(): Map<String, Map<Int, Int>> {
-        return dao.getOptionsSummary()
-    }
 
     /**
      * Reset options for a specific package (all bundles)
@@ -246,13 +193,5 @@ class PatchOptionsRepository(db: AppDatabase) {
      */
     suspend fun getOptionsCountForBundle(packageName: String, bundleUid: Int): Int {
         return dao.getOptionsForBundle(packageName, bundleUid).size
-    }
-
-    /**
-     * Get total count of all options across all packages
-     * Used for displaying counts in UI without deserialization
-     */
-    suspend fun getTotalOptionsCount(): Int {
-        return dao.getOptionsSummaryRaw().sumOf { it.optionCount }
     }
 }

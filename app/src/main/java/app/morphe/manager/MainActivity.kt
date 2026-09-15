@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Parcelable
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
@@ -24,6 +25,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,38 +35,31 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import app.morphe.manager.domain.batch.BatchTarget
 import app.morphe.manager.domain.manager.PreferencesManager
-import app.morphe.manager.ui.model.navigation.BatchPatcher
-import app.morphe.manager.ui.model.navigation.ComplexParameter
-import app.morphe.manager.ui.model.navigation.HomeScreen
-import app.morphe.manager.ui.model.navigation.Patcher
-import app.morphe.manager.ui.model.navigation.Settings
+import app.morphe.manager.domain.repository.PatchBundleRepository
+import app.morphe.manager.ui.model.navigation.*
 import app.morphe.manager.ui.screen.BatchPatcherScreen
 import app.morphe.manager.ui.screen.HomeScreen
 import app.morphe.manager.ui.screen.PatcherScreen
 import app.morphe.manager.ui.screen.SettingsScreen
-import app.morphe.manager.ui.screen.home.ExternalBatchPatchDialog
-import app.morphe.manager.ui.screen.home.GlobalOnboardingState
-import app.morphe.manager.ui.screen.home.OnboardingShowcase
-import app.morphe.manager.ui.screen.home.OnboardingState
-import app.morphe.manager.ui.screen.home.StepDef
+import app.morphe.manager.ui.screen.home.*
 import app.morphe.manager.ui.screen.shared.AnimatedBackground
-import app.morphe.manager.ui.screen.shared.BackgroundType
 import app.morphe.manager.ui.screen.shared.Animations
-import app.morphe.manager.ui.theme.ManagerTheme
-import app.morphe.manager.ui.theme.Theme
-import app.morphe.manager.ui.theme.ThemeStyle
-import app.morphe.manager.ui.theme.resolveThemeStyle
+import app.morphe.manager.ui.screen.shared.BackgroundType
+import app.morphe.manager.ui.theme.*
 import app.morphe.manager.ui.viewmodel.HomeViewModel
 import app.morphe.manager.ui.viewmodel.MainViewModel
 import app.morphe.manager.ui.viewmodel.PatcherViewModel
 import app.morphe.manager.ui.viewmodel.ThemeSettingsViewModel
+import app.morphe.manager.ui.viewmodel.UpdateViewModel
 import app.morphe.manager.util.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
+import org.koin.core.context.GlobalContext
 import org.koin.core.parameter.parametersOf
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -75,22 +70,33 @@ private enum class OnboardingPhase { HOME, SHEET, SETTINGS, DONE }
 class MainActivity : AppCompatActivity() {
 
     /**
+     * Applies the interface scale to the activity context, so every window it opens is drawn at
+     * that scale rather than only the composition inside [setContent].
+     *
      * On Android < 13, AppCompatDelegate.setApplicationLocales() is unreliable on some
      * devices and OEMs - the locale is saved correctly but never applied on cold start.
      * Wrap the base context manually to guarantee the correct locale is always applied.
      */
     override fun attachBaseContext(newBase: Context) {
+        var context = newBase
+
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            val storedLang = readLanguageFromPrefs(newBase)
+            val storedLang = readLanguageFromPrefs(context)
             val locale = parseLocaleCode(storedLang)
             if (locale != null) {
-                val config = newBase.resources.configuration
+                val config = context.resources.configuration
                 config.setLocale(locale)
-                super.attachBaseContext(newBase.createConfigurationContext(config))
-                return
+                context = context.createConfigurationContext(config)
             }
         }
-        super.attachBaseContext(newBase)
+
+        // Koin is started in Application.onCreate, which has already run by the time an activity
+        // attaches. A scale that cannot be read must not take the launch down with it
+        val scale = runCatching {
+            GlobalContext.get().get<PreferencesManager>().uiScale.getBlocking()
+        }.getOrDefault(UI_SCALE_DEFAULT)
+
+        super.attachBaseContext(context.withUiScale(scale))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -102,8 +108,11 @@ class MainActivity : AppCompatActivity() {
 
         val vm: MainViewModel = getActivityViewModel()
 
-        // Handle deep link on cold start
-        handleDeepLinkIntent(intent, vm)
+        // Handle deep link on cold start. The task keeps the intent that started it, so a restore
+        // after the process was reclaimed - or any recreate - would replay a link already acted on
+        if (savedInstanceState == null) {
+            handleDeepLinkIntent(intent, vm)
+        }
 
         setContent {
             val theme by vm.prefs.theme.getAsState()
@@ -141,7 +150,21 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // Replaces the launch intent, so a later recreate restores this one rather than the
+        // link the task was originally started from
+        setIntent(intent)
         handleDeepLinkIntent(intent, getActivityViewModel())
+    }
+
+    /**
+     * Tells the launcher a shortcut was used, so it can rank the list by use. The id is dropped
+     * once reported, or the same activation counts again when the activity is recreated.
+     */
+    private fun reportShortcutUsage(intent: Intent?) {
+        val shortcutId = intent?.getStringExtra(EXTRA_SHORTCUT_ID) ?: return
+        intent.removeExtra(EXTRA_SHORTCUT_ID)
+        runCatching { ShortcutManagerCompat.reportShortcutUsed(this, shortcutId) }
+            .onFailure { Log.w(tag, "Failed to report shortcut usage", it) }
     }
 
     /**
@@ -150,6 +173,8 @@ class MainActivity : AppCompatActivity() {
      * Only GitHub and GitLab URLs are accepted.
      */
     private fun handleDeepLinkIntent(intent: Intent?, vm: MainViewModel) {
+        reportShortcutUsage(intent)
+
         // Handled here rather than in onNewIntent so a cold start from a notification or a
         // launcher shortcut triggers the check as well
         if (intent?.getBooleanExtra(UpdateNotificationManager.EXTRA_TRIGGER_UPDATE_CHECK, false) == true) {
@@ -157,7 +182,24 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Automatic re-patch notification: reopens the queue it reports about
+        // Changelog action of an update notification: checks for nothing on the way in, so the
+        // notes are read against the installed version
+        if (intent?.action == ACTION_SHOW_BUNDLE_CHANGELOG) {
+            vm.pendingBundleChangelogUid = intent.getIntExtra(
+                EXTRA_CHANGELOG_BUNDLE_UID,
+                PatchBundleRepository.DEFAULT_SOURCE_UID
+            )
+            return
+        }
+
+        // Same action on a manager update notification. This one does resolve the release on
+        // the way in, because the notes it shows belong to a version that is not installed yet
+        if (intent?.action == ACTION_SHOW_MANAGER_CHANGELOG) {
+            vm.pendingManagerChangelog = true
+            return
+        }
+
+        // Batch result notification: reopens the queue it reports about
         if (intent?.action == ACTION_SHOW_BATCH_RESULT) {
             vm.pendingBatchResult = true
             return
@@ -181,12 +223,14 @@ class MainActivity : AppCompatActivity() {
                     ?.filter(String::isNotBlank)
 
             if (packageNames.isNullOrEmpty()) {
-                // No list means the launcher shortcut, which asks the app to work out what is
-                // outdated. It only opens the preflight list, so it needs no caller gate
+                // No list means the launcher shortcut or the re-patch notification, which
+                // ask the app to work out what is outdated. Either only opens the preflight
+                // list, so neither needs a caller gate
                 vm.pendingOutdatedBatch = true
             } else {
                 vm.pendingBatchPatch = MainViewModel.BatchPatchRequest(
-                    packageNames = packageNames,
+                    // An external request names apps, so it rebuilds each one's own install
+                    targets = packageNames.map { BatchTarget(it) },
                     // Only the system-supplied caller is trustworthy here. getReferrer() reads
                     // EXTRA_REFERRER, which the sender fills in itself, so it could name any
                     // package and both skip the confirmation and misname it in the dialog
@@ -250,6 +294,9 @@ class MainActivity : AppCompatActivity() {
         /** Package names to patch, either a string array or a comma-separated string. */
         const val EXTRA_BATCH_PACKAGES = "packages"
 
+        /** Identifies the launcher shortcut an intent came from, for usage reporting. */
+        const val EXTRA_SHORTCUT_ID = "shortcut_id"
+
         /** Action behind the per-app launcher shortcuts. */
         const val ACTION_PATCH_APP = "app.morphe.manager.action.PATCH_APP"
 
@@ -258,6 +305,15 @@ class MainActivity : AppCompatActivity() {
 
         /** Action that reopens the batch queue from an automatic re-patch notification. */
         const val ACTION_SHOW_BATCH_RESULT = "app.morphe.manager.action.SHOW_BATCH_RESULT"
+
+        /** Action behind the changelog button of an update notification. */
+        const val ACTION_SHOW_BUNDLE_CHANGELOG = "app.morphe.manager.action.SHOW_BUNDLE_CHANGELOG"
+
+        /** Source whose changelog the update notification opens. */
+        const val EXTRA_CHANGELOG_BUNDLE_UID = "changelog_bundle_uid"
+
+        /** Action behind the changelog button of a manager update notification. */
+        const val ACTION_SHOW_MANAGER_CHANGELOG = "app.morphe.manager.action.SHOW_MANAGER_CHANGELOG"
 
         /** Package the per-app shortcut opens the patch dialog for. */
         const val EXTRA_PATCH_PACKAGE = "patch_package"
@@ -323,6 +379,27 @@ private fun MorpheManager(vm: MainViewModel) {
         if (vm.pendingBatchResult) vm.onShowBatchResult()
     }
 
+    // Changelog asked for from an update notification, shown over whichever screen is open
+    val patchSources by homeViewModel.patchBundleRepository.sources.collectAsStateWithLifecycle()
+    BundleChangelogHost(
+        request = vm.pendingBundleChangelogUid?.let { BundleChangelogRequest(it) },
+        sources = patchSources,
+        onDismissRequest = { vm.pendingBundleChangelogUid = null }
+    )
+
+    // The manager has no changelog view of its own for a release it has not installed, so the
+    // update dialog is the answer to "what's new": it lists exactly the entries being offered
+    if (vm.pendingManagerChangelog) {
+        // Activity-scoped, so this shares the check and the download with the home screen
+        val updateViewModel: UpdateViewModel = koinViewModel(
+            viewModelStoreOwner = LocalActivity.current as ComponentActivity
+        )
+        ManagerUpdateDetailsDialog(
+            onDismiss = { vm.pendingManagerChangelog = false },
+            updateViewModel = updateViewModel
+        )
+    }
+
     // Per-app shortcut reuses the trigger the installed-app dialog already goes through
     LaunchedEffect(vm.pendingPatchPackage) {
         vm.pendingPatchPackage?.let { packageName ->
@@ -349,7 +426,7 @@ private fun MorpheManager(vm: MainViewModel) {
             navController.navigateComplex(
                 BatchPatcher,
                 BatchPatcher.ViewModelParams(
-                    packageNames = request.packageNames,
+                    targets = request.targets,
                     useMount = false
                 )
             )
@@ -359,7 +436,7 @@ private fun MorpheManager(vm: MainViewModel) {
     vm.batchPatchConfirmation?.let { request ->
         ExternalBatchPatchDialog(
             callerPackage = request.callerPackage,
-            packageCount = request.packageNames.size,
+            packageCount = request.targets.size,
             onConfirm = { trustCaller -> vm.approveExternalBatch(trustCaller) },
             onDismiss = vm::dismissExternalBatch
         )
@@ -513,7 +590,9 @@ private fun MorpheManager(vm: MainViewModel) {
             enterTransition = { Animations.screenEnter },
             exitTransition = { Animations.screenExit },
             popEnterTransition = { Animations.screenEnter },
-            popExitTransition = { Animations.screenExit }
+            popExitTransition = { Animations.screenExit },
+            predictivePopEnterTransition = { Animations.screenEnter },
+            predictivePopExitTransition = { Animations.pushExit }
         ) {
             composable<HomeScreen> { entry ->
                 val bundleUpdateProgress by homeViewModel.bundleUpdateProgress.collectAsStateWithLifecycle(null)
@@ -541,17 +620,18 @@ private fun MorpheManager(vm: MainViewModel) {
                                 Patcher.ViewModelParams(
                                     selectedApp = params.selectedApp,
                                     selectedPatches = params.patches,
-                                    options = params.options
+                                    options = params.options,
+                                    targetPackageName = params.targetPackageName
                                 )
                             )
                         }
                     },
-                    onStartBatchPatch = { packageNames, useMount ->
+                    onStartBatchPatch = { targets, useMount ->
                         entry.lifecycleScope.launch {
                             navController.navigateComplex(
                                 BatchPatcher,
                                 BatchPatcher.ViewModelParams(
-                                    packageNames = packageNames,
+                                    targets = targets,
                                     useMount = useMount
                                 )
                             )
@@ -570,7 +650,7 @@ private fun MorpheManager(vm: MainViewModel) {
             composable<BatchPatcher> { entry ->
                 val params = entry.getComplexArg<BatchPatcher.ViewModelParams>() ?: return@composable
                 BatchPatcherScreen(
-                    packageNames = params.packageNames,
+                    targets = params.targets,
                     useMount = params.useMount,
                     onBackClick = { navController.popBackStack() },
                     onAppStateChanged = homeViewModel::notifyAppStateChanged

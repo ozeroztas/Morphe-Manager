@@ -10,11 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Apps
-import androidx.compose.material.icons.outlined.Circle
-import androidx.compose.material.icons.outlined.ColorLens
-import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.Restore
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -24,22 +20,15 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import app.morphe.manager.R
 import app.morphe.manager.ui.screen.home.AppCardContent
 import app.morphe.manager.ui.screen.home.AppCardLayout
 import app.morphe.manager.ui.screen.shared.*
 import app.morphe.manager.ui.theme.LocalAppCardColorResolver
-import app.morphe.manager.util.AppCardColorDefaults
-import app.morphe.manager.util.AppCardColorMode
-import app.morphe.manager.util.AppCardColorResolver
-import app.morphe.manager.util.AppCardColorStop
-import app.morphe.manager.util.toColorOrNull
-import app.morphe.manager.util.toHexString
+import app.morphe.manager.util.*
 
 private const val MODE_COLUMNS = 2
 
@@ -117,34 +106,29 @@ fun AppCardColorDialog(
     AppDialog(
         onDismissRequest = onDismiss,
         title = stringResource(R.string.settings_appearance_app_card_colors),
+        titleTrailingContent = {
+            TitleAction(
+                icon = Icons.Outlined.Restore,
+                contentDescription = stringResource(R.string.reset),
+                onClick = resetDraft
+            )
+        },
         footer = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(Defaults.ContentPaddingSmall)
-            ) {
-                AppDialogButtonRow(
-                    primaryText = stringResource(R.string.save),
-                    onPrimaryClick = {
-                        onApply(
-                            draftMode,
-                            draftStartColorHex,
-                            draftMiddleColorHex,
-                            draftEndColorHex,
-                            draftSolidColorHex
-                        )
-                        onDismiss()
-                    },
-                    secondaryText = stringResource(R.string.reset),
-                    onSecondaryClick = resetDraft,
-                    secondaryIcon = Icons.Outlined.Restore
-                )
-
-                AppDialogOutlinedButton(
-                    text = stringResource(android.R.string.cancel),
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
+            AppDialogButtonRow(
+                primaryText = stringResource(R.string.save),
+                onPrimaryClick = {
+                    onApply(
+                        draftMode,
+                        draftStartColorHex,
+                        draftMiddleColorHex,
+                        draftEndColorHex,
+                        draftSolidColorHex
+                    )
+                    onDismiss()
+                },
+                secondaryText = stringResource(android.R.string.cancel),
+                onSecondaryClick = onDismiss
+            )
         }
     ) {
         Column(
@@ -296,7 +280,6 @@ private fun AppCardColorPreview(colors: List<Color>?) {
     CompositionLocalProvider(LocalAppCardColorResolver provides resolver) {
         AppCardLayout(
             gradientColors = AppCardColorDefaults.defaultGradientColors,
-            enabled = true,
             onClick = {}
         ) {
             AppCardContent(
@@ -344,7 +327,7 @@ private fun AppCardColorItem(
 
 @Composable
 private fun Modifier.appCardColorPreviewBackground(colors: List<Color>): Modifier {
-    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val rtl = isRtl()
     val safeColors = remember(colors) {
         when {
             colors.isEmpty() -> listOf(Color.Transparent, Color.Transparent)
@@ -355,8 +338,8 @@ private fun Modifier.appCardColorPreviewBackground(colors: List<Color>): Modifie
     return drawWithCache {
         val brush = Brush.linearGradient(
             colors = safeColors,
-            start = Offset(if (rtl) size.width else 0f, 0f),
-            end = Offset(if (rtl) 0f else size.width, size.height)
+            start = Offset(startEdgeX(size.width, rtl), 0f),
+            end = Offset(endEdgeX(size.width, rtl), size.height)
         )
         onDrawBehind { drawRect(brush) }
     }

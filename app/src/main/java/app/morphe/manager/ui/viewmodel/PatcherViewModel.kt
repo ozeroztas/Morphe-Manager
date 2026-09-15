@@ -24,24 +24,27 @@ import app.morphe.manager.BuildConfig
 import app.morphe.manager.R
 import app.morphe.manager.data.platform.Filesystem
 import app.morphe.manager.data.room.apps.installed.InstallType
-import app.morphe.manager.domain.manager.InstallerPreferenceTokens
+import app.morphe.manager.domain.installer.InstallerManager
 import app.morphe.manager.domain.manager.PatchOptionsPreferencesManager
 import app.morphe.manager.domain.manager.PreferencesManager
 import app.morphe.manager.domain.repository.*
 import app.morphe.manager.domain.repository.PatchBundleRepository.Companion.DEFAULT_SOURCE_UID
 import app.morphe.manager.domain.worker.WorkerRepository
+import app.morphe.manager.patcher.patch.ApkArchitectureResolver
 import app.morphe.manager.patcher.patch.PatchBundleInfo
 import app.morphe.manager.patcher.patch.PatchLockState
 import app.morphe.manager.patcher.patch.PatchSourceRef
-import app.morphe.manager.patcher.patch.SELECTION_APK_ARCHITECTURE
 import app.morphe.manager.patcher.runtime.ProcessRuntime
+import app.morphe.manager.patcher.runtime.lowerMemoryLimit
 import app.morphe.manager.patcher.split.SplitApkPreparer
 import app.morphe.manager.patcher.worker.PatcherWorker
 import app.morphe.manager.ui.model.*
 import app.morphe.manager.ui.model.navigation.Patcher
 import app.morphe.manager.ui.screen.patcher.PatcherErrorInfo
 import app.morphe.manager.util.*
+import app.morphe.manager.util.PatchSelectionUtils.restrictTo
 import app.morphe.manager.worker.UpdateCheckWorker
+import app.morphe.patcher.patch.ApkArchitecture
 import app.morphe.patcher.patch.InstallerType
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
@@ -54,6 +57,7 @@ import org.koin.core.component.inject
 import java.io.File
 import java.io.IOException
 import java.util.UUID
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -72,6 +76,7 @@ class PatcherViewModel(
     private val prefs: PreferencesManager by inject()
     private val patchOptionsPrefs: PatchOptionsPreferencesManager by inject()
     private val originalApkRepository: OriginalApkRepository by inject()
+    private val installerManager: InstallerManager by inject()
     private val savedStateHandle: SavedStateHandle = get()
 
     private var savedPatchedApp by savedStateHandle.saveableVar { false }
@@ -107,6 +112,10 @@ class PatcherViewModel(
     private val _autoInstallChannel = Channel<Unit>(Channel.CONFLATED)
     val autoInstallEvent: Flow<Unit> = _autoInstallChannel.receiveAsFlow()
 
+    /** Whether this run installs on its own, set before the event so the screen shows it coming. */
+    var autoInstallPending by mutableStateOf(false)
+        private set
+
     var patchingCompletedAt: Long? = null
         private set
 
@@ -116,8 +125,28 @@ class PatcherViewModel(
     var showSuccessScreen: Boolean by mutableStateOf(false)
         private set
 
-    fun showSuccess() { showSuccessScreen = true }
+    // A finished run that arrived while the user was playing, waiting for them to be done
+    private var successScreenHeldBack = false
+    private var successScreenDeferred = false
+
+    fun showSuccess() {
+        successScreenHeldBack = false
+        showSuccessScreen = true
+    }
+
     fun hideSuccessScreen() { showSuccessScreen = false }
+
+    /**
+     * Holds the automatic switch to the success screen back while the user is busy with something
+     * the run has no right to interrupt, currently a mini-game, and releases it again afterward.
+     *
+     * A run that finishes meanwhile is not lost: the progress screen turns its own action bar into
+     * an install button, and the screen appears on its own once [defer] goes back to false.
+     */
+    fun deferSuccessScreen(defer: Boolean) {
+        successScreenDeferred = defer
+        if (!defer && successScreenHeldBack) showSuccess()
+    }
 
     var isPatching: Boolean by mutableStateOf(true)
         private set
@@ -126,35 +155,141 @@ class PatcherViewModel(
     val packageName = selectedApp.packageName
     val version = selectedApp.version
 
+    /**
+     * How the finished APK differs from the install this run was aimed at, or null when it lands
+     * on that install after all. The name a patch builds under exists only once it has run, so
+     * the output is the only place it can be read.
+     */
+    suspend fun renameWarning(): RenameWarning? = withContext(Dispatchers.IO) {
+        val target = input.targetPackageName ?: packageName
+        val result = pm.getPackageInfo(outputFile)?.packageName ?: return@withContext null
+        if (result == target) return@withContext null
+
+        // Patches rename an app for reasons of their own, and a build the user never asked to
+        // clone is still the app's only install however it ended up named
+        val bundles = scopedBundles()
+        if (!producedClone(result, sanitizeSelection(appliedSelection, bundles), bundles)) {
+            return@withContext null
+        }
+
+        RenameWarning(
+            targetPackageName = target,
+            resultPackageName = result,
+            // Asked of the device rather than the manager's records: what gets overwritten is
+            // whatever holds the name, tracked here or not
+            replacesExisting = pm.getPackageInfo(result) != null
+        )
+    }
+
+    /** The sources this run drew from, scoped to the app it started from. */
+    private suspend fun scopedBundles(): Map<Int, PatchBundleInfo.Scoped> =
+        patchBundleRepository.scopedBundleInfoFlow(
+            packageName,
+            input.selectedApp.version,
+            input.selectedApp.versionCode
+        ).first().associateBy { it.uid }
+
+    /**
+     * Whether this run built a clone rather than the app's own install, judged the same way here
+     * and where the result is recorded so the warning cannot contradict what gets stored.
+     */
+    private fun producedClone(
+        resultPackageName: String,
+        selection: PatchSelection,
+        bundles: Map<Int, PatchBundleInfo.Scoped>
+    ) = producesClone(
+        originalPackageName = packageName,
+        resultPackageName = resultPackageName,
+        selection = selection,
+        declaresPackageName = { bundleUid, patchName ->
+            bundles[bundleUid]?.patches?.firstOrNull { it.name == patchName }?.declaresPackageName == true
+        }
+    )
+
+    /**
+     * Offered after the patcher process was killed, holding the lower limit that might get the
+     * run through. The limit is the user's setting, so it is only ever a suggestion.
+     */
     data class MemoryAdjustmentDialogState(
-        val previousLimit: Int,
-        val newLimit: Int,
-        val adjusted: Boolean
+        val currentLimit: Int,
+        val suggestedLimit: Int,
+        val canAdjust: Boolean
     )
 
     var memoryAdjustmentDialog by mutableStateOf<MemoryAdjustmentDialogState?>(null)
         private set
 
+    fun applyMemoryAdjustment() {
+        val state = memoryAdjustmentDialog ?: return
+        memoryAdjustmentDialog = null
+        if (!state.canAdjust) return
+        viewModelScope.launch { prefs.patcherProcessMemoryLimit.update(state.suggestedLimit) }
+    }
+
+    fun dismissMemoryAdjustment() {
+        memoryAdjustmentDialog = null
+    }
+
+    /**
+     * Non-null when the saved selection names patches no enabled source offers any more, which
+     * the run is held on until the user says whether to go ahead without them.
+     */
     data class MissingPatchWarningState(
         val patchNames: List<String>
     )
     var missingPatchWarning by mutableStateOf<MissingPatchWarningState?>(null)
         private set
 
+    /** Set once the user has agreed to patch without them, so the same question is asked once. */
+    private var missingPatchesAccepted = false
+
+    /** Goes ahead with the patches that are still there, leaving out the ones that are gone. */
+    fun continueWithoutMissingPatches() {
+        missingPatchesAccepted = true
+        missingPatchWarning = null
+
+        viewModelScope.launch { runPreflightCheck() }
+    }
+
+    fun dismissMissingPatchWarning() {
+        missingPatchWarning = null
+    }
+
     var batteryOptimizationDialog by mutableStateOf(false)
         private set
 
     /**
      * Non-null when one or more patch option paths cannot be read before patching starts.
+     *
+     * @param canClear Whether the values behind the failing paths can be dropped from the dialog.
+     *                 Only simple mode keeps them, expert mode edits them while selecting patches.
      */
     data class InaccessibleOptionPathsState(
-        val failures: List<PathValidationResult>
+        val failures: List<PathValidationResult>,
+        val canClear: Boolean
     )
     var inaccessibleOptionPaths by mutableStateOf<InaccessibleOptionPathsState?>(null)
         private set
 
     fun dismissInaccessibleOptionPathsError() {
         inaccessibleOptionPaths = null
+    }
+
+    /**
+     * Drops the saved option values behind the failing paths and resumes the check, so a run
+     * whose files are gone for good goes on with the defaults the patches declare.
+     */
+    fun clearInaccessibleOptionPaths() {
+        val failures = inaccessibleOptionPaths?.failures.orEmpty()
+        inaccessibleOptionPaths = null
+
+        viewModelScope.launch {
+            failures.forEach { failure ->
+                patchOptionsPrefs.clearOptionValue(packageName, failure.patchName, failure.optionKey)
+            }
+
+            runPreflightCheck()
+        }
     }
 
     /**
@@ -201,6 +336,8 @@ class PatcherViewModel(
         }
     }
 
+    private var apkArchitecture: ApkArchitecture? = null
+
     private suspend fun gatherScopedBundles(): Map<Int, PatchBundleInfo.Scoped> =
         patchBundleRepository.scopedBundleInfoFlow(
             packageName,
@@ -212,13 +349,21 @@ class PatcherViewModel(
      * Patches the sources declare unavailable for [installerType], so the finished app can name
      * what it was built without instead of leaving the user to spot the missing patch.
      */
-    suspend fun unavailablePatchNames(installerType: InstallerType): List<String> =
-        gatherScopedBundles().values
+    suspend fun unavailablePatchNames(installerType: InstallerType): List<String> {
+        // Kept once resolved, because the input a temporary APK was read from is gone by the time
+        // the install target changes and the list is asked for again
+        val architecture = apkArchitecture
+            ?: ApkArchitectureResolver.resolve(selectedApp, pm).also { apkArchitecture = it }
+
+        return gatherScopedBundles().values
+            .asSequence()
             .flatMap { it.patches }
-            .filter { it.lockState(installerType, SELECTION_APK_ARCHITECTURE) == PatchLockState.LOCKED_OFF }
-            .map { it.name }
+            .filter { it.lockState(installerType, architecture) == PatchLockState.LOCKED_OFF }
+            .map { it.displayName }
             .distinct()
             .sorted()
+            .toList()
+    }
 
     suspend fun collectSelectedBundleMetadata(): List<PatchSourceRef> {
         val globalBundles = patchBundleRepository.bundleInfoFlow.first()
@@ -256,8 +401,12 @@ class PatcherViewModel(
      * Called after patching fails so the dialog opens instantly without an extra async wait.
      */
     suspend fun buildErrorInfo(): PatcherErrorInfo {
+        // Read from what the run started with, since a failed run leaves no output APK to name
         val label = runCatching {
-            pm.getPackageInfo(outputFile)?.let { with(pm) { it.label() } }
+            when (val selected = selectedApp) {
+                is SelectedApp.Local -> pm.getPackageInfo(selected.file)
+                else -> pm.getPackageInfo(packageName)
+            }?.let { with(pm) { it.label() } }
         }.getOrNull()
         val bundles = collectSelectedBundleMetadata().map {
             PatcherErrorInfo.BundleInfo(name = it.name, version = it.version)
@@ -266,7 +415,9 @@ class PatcherViewModel(
             appName = label ?: packageName,
             packageName = packageName,
             appVersion = version ?: "unspecified",
-            bundles = bundles
+            patchCount = patchCount,
+            bundles = bundles,
+            stripsNativeLibs = prefs.stripUnusedNativeLibs.get()
         )
     }
 
@@ -428,7 +579,22 @@ class PatcherViewModel(
         isPatching = false
     }
 
+    /**
+     * Runs the checks that stand between the screen and the worker, and starts the run when they
+     * all pass. Nothing runs while the user answers one, so the screen is held back until it does.
+     */
     private suspend fun runPreflightCheck() {
+        isPatching = true
+        patchRun.resumeBeforeStart()
+
+        if (preflight()) return
+
+        isPatching = false
+        patchRun.holdBeforeStart()
+    }
+
+    /** The preflight checks themselves. False when one of them put a question on screen. */
+    private suspend fun preflight(): Boolean {
         val scopedBundles = gatherScopedBundles()
         val sanitizedSelection = sanitizeSelection(appliedSelection, scopedBundles)
         val missing = mutableListOf<String>()
@@ -436,11 +602,11 @@ class PatcherViewModel(
             val kept = sanitizedSelection[uid] ?: emptySet()
             patches.filterNot { it in kept }.forEach { missing += it }
         }
-        if (missing.isNotEmpty()) {
+        if (missing.isNotEmpty() && !missingPatchesAccepted) {
             missingPatchWarning = MissingPatchWarningState(
                 patchNames = missing.distinct().sorted()
             )
-            return
+            return false
         }
 
         patchSourcesForLog = collectSelectedBundleMetadata()
@@ -457,7 +623,7 @@ class PatcherViewModel(
                     requiredVersion = required,
                     bundleName = bundle.name,
                 )
-                return
+                return false
             }
         }
 
@@ -466,21 +632,25 @@ class PatcherViewModel(
             input.options
         } else {
             patchOptionsPrefs.exportPatchOptions(packageName)
-        }
+        }.restrictTo(input.selectedPatches)
 
         val pathFailures = withContext(Dispatchers.IO) { validateOptionPaths(optionsToValidate) }
         if (pathFailures.isNotEmpty()) {
-            inaccessibleOptionPaths = InaccessibleOptionPathsState(pathFailures)
-            return
+            inaccessibleOptionPaths = InaccessibleOptionPathsState(
+                failures = pathFailures,
+                canClear = !prefs.useExpertMode.get()
+            )
+            return false
         }
 
         val powerManager = app.getSystemService(PowerManager::class.java)
         if (prefs.useExpertMode.get() && !powerManager.isIgnoringBatteryOptimizations(app.packageName) && !prefs.batteryOptimizationRequested.get()) {
             batteryOptimizationDialog = true
-            return
+            return false
         }
 
         startWorker()
+        return true
     }
 
     private fun startWorker() {
@@ -600,7 +770,9 @@ class PatcherViewModel(
         if (savePatchedEnabled) {
             try {
                 savedCopy.parentFile?.mkdirs()
-                outputFile.copyTo(savedCopy, overwrite = true)
+                // Staged, so a reader that refreshes while the copy runs never opens a half
+                // written archive at the path the app already reports as the saved build
+                copyThroughStaging(outputFile, savedCopy)
             } catch (error: IOException) {
                 if (installType == InstallType.SAVED) {
                     Log.e(TAG, "Failed to copy patched APK for later", error)
@@ -616,38 +788,70 @@ class PatcherViewModel(
             exportMetadata = metadata
         }
 
-        // Use original package name to get scoped bundles for selection persistence
-        // This ensures all applied patches are correctly saved
-        val scopedBundlesForSelection = patchBundleRepository.scopedBundleInfoFlow(
-            packageName,
-            input.selectedApp.version,
-            input.selectedApp.versionCode
-        ).first().associateBy { it.uid }
+        // Scoped to the original package name, so every applied patch is still recognized once
+        // the run has built the app under a name of its own
+        val scopedBundlesForSelection = scopedBundles()
         val sanitizedSelection = sanitizeSelection(appliedSelection, scopedBundlesForSelection)
         val sanitizedOptions = sanitizeOptions(appliedOptions, scopedBundlesForSelection)
 
         val selectionPayload = patchBundleRepository.snapshotSelection(sanitizedSelection)
 
+        val isClone = producedClone(finalPackageName, sanitizedSelection, scopedBundlesForSelection)
+
         installedAppRepository.addOrUpdate(
             finalPackageName,
             packageName,
+            isClone,
             finalVersion,
             installType,
             sanitizedSelection,
             selectionPayload
         )
 
-        patchSelectionRepository.updateSelection(
-            packageName,
-            sanitizedSelection,
-            scope = scopedBundlesForSelection.keys
+        persistConfiguration(
+            // A copy keeps a configuration of its own, while the app's install reads and writes
+            // the app's, whichever package name the patches ended up building it under
+            configurationPackageName = if (isClone) finalPackageName else packageName,
+            selection = sanitizedSelection,
+            options = sanitizedOptions,
+            bundles = scopedBundlesForSelection
         )
-        patchOptionsRepository.saveOptions(packageName, sanitizedOptions)
         appliedSelection = sanitizedSelection
         appliedOptions = sanitizedOptions
 
         savedPatchedApp = savedPatchedApp || installType == InstallType.SAVED || savedCopy.exists()
         true
+    }
+
+    /**
+     * Stores the patches and options this run was built with under the install it produced.
+     *
+     * A configuration describes an install, and every install of an app keeps its own. A run that
+     * produced a copy therefore leaves the one it started from untouched: what it writes is a
+     * copy, taken at the moment the copy came into being.
+     */
+    private suspend fun persistConfiguration(
+        configurationPackageName: String,
+        selection: PatchSelection,
+        options: Options,
+        bundles: Map<Int, PatchBundleInfo.Scoped>
+    ) {
+        patchSelectionRepository.updateSelection(
+            configurationPackageName,
+            selection,
+            scope = bundles.keys
+        )
+        patchOptionsRepository.saveOptions(configurationPackageName, options)
+
+        // Taken here as well as before patching, because a copy starts out with no snapshot of
+        // its own and would flag every patch it was just built with as new
+        bundles.forEach { (uid, bundle) ->
+            patchSelectionRepository.saveSeenPatches(
+                packageName = configurationPackageName,
+                bundleUid = uid,
+                patchNames = bundle.patches.mapTo(mutableSetOf()) { it.name }
+            )
+        }
     }
 
     override var downloadProgress by savedStateHandle.saveable(
@@ -817,6 +1021,7 @@ class PatcherViewModel(
             mergedOptions,
             patchRun.logger,
             onPatchCompleted = { patchRun.onPatchCompleted() },
+            onPatchingRestarted = { patchRun.onRestart() },
             setInputFile = { file, needsSplit, merged ->
                 val storedFile = if (shouldPreserveInput) {
                     val existing = inputFile
@@ -875,8 +1080,8 @@ class PatcherViewModel(
                                     patchingCompletedInForeground = _patcherSucceeded.hasActiveObservers()
                                     isPatching = false
                                     _patcherSucceeded.value = true
-                                    scheduleAutoInstallIfNeeded()
                                     scheduleSuccessScreen()
+                                    scheduleAutoInstallIfNeeded()
                                 }
                             }
                         }
@@ -902,26 +1107,41 @@ class PatcherViewModel(
         }
     }
 
+    /** What is left of the beat the progress screen holds a finished run for. */
+    private val successScreenDelay: Duration
+        get() {
+            val elapsed = patchingCompletedAt?.let { System.currentTimeMillis() - it } ?: 0L
+            return (2000L - elapsed).coerceAtLeast(0L).milliseconds
+        }
+
     private fun scheduleSuccessScreen() = viewModelScope.launch {
-        val elapsed = patchingCompletedAt?.let { System.currentTimeMillis() - it } ?: 0L
-        delay((2000L - elapsed).coerceAtLeast(0L).milliseconds)
-        showSuccessScreen = true
+        delay(successScreenDelay)
+        if (successScreenDeferred) successScreenHeldBack = true else showSuccessScreen = true
+    }
+
+    /** Called once the installer has taken the auto-install over. */
+    fun autoInstallHandedOff() {
+        autoInstallPending = false
     }
 
     private fun scheduleAutoInstallIfNeeded() = viewModelScope.launch {
-        if (!prefs.autoInstallWithShizuku.get()) return@launch
-        val installerPrimary = prefs.installerPrimary.get()
-        if (installerPrimary != InstallerPreferenceTokens.SHIZUKU &&
-            installerPrimary != InstallerPreferenceTokens.SHIZUKU_PLAY_STORE
-        ) return@launch
-        if (prefs.promptInstallerOnInstall.get()) return@launch
+        // A patch is free to rename the app, and the name it built under is the one being replaced
+        val target = withContext(Dispatchers.IO) { pm.getPackageInfo(outputFile)?.packageName }
+            ?: packageName
+        if (!installerManager.autoInstallAllowed(target)) return@launch
+        autoInstallPending = true
+        // Held for the same beat as the success screen: an install starting sooner puts the
+        // system dialog over a run the progress screen is still drawing as unfinished
+        delay(successScreenDelay)
         _autoInstallChannel.trySend(Unit)
     }
 
     private fun handleWorkerFailure(workInfo: WorkInfo) {
         if (!handledFailureIds.add(workInfo.id)) return
         val exitCode = workInfo.outputData.getInt(PatcherWorker.PROCESS_EXIT_CODE_KEY, Int.MIN_VALUE)
-        if (exitCode == ProcessRuntime.OOM_EXIT_CODE) {
+        // A process the system killed is exactly what a lower limit is meant to prevent, so
+        // both ways it can be killed for memory lead here
+        if (exitCode == ProcessRuntime.OOM_EXIT_CODE || exitCode == ProcessRuntime.SIGKILL_EXIT_CODE) {
             viewModelScope.launch {
                 if (!prefs.useProcessRuntime.get()) return@launch
                 forceKeepLocalInput = true
@@ -929,16 +1149,16 @@ class PatcherViewModel(
                     PatcherWorker.PROCESS_PREVIOUS_LIMIT_KEY,
                     -1
                 )
-                val previousLimit = if (previousFromWorker > 0) previousFromWorker else prefs.patcherProcessMemoryLimit.get()
-                val newLimit = (previousLimit - MEMORY_ADJUSTMENT_MB).coerceAtLeast(MIN_LIMIT_MB)
-                val adjusted = newLimit < previousLimit
-                if (adjusted) {
-                    prefs.patcherProcessMemoryLimit.update(newLimit)
-                }
+                val currentLimit = if (previousFromWorker > 0) previousFromWorker else prefs.patcherProcessMemoryLimit.get()
+                // The same step down the memory retries take, so accepting this lands on a
+                // value the slider can represent and the runtime honors
+                val suggestedLimit = lowerMemoryLimit(currentLimit)
+                // The setting is left alone until the user accepts the suggestion: silently
+                // lowering it made the configured limit drift down across failed runs
                 memoryAdjustmentDialog = MemoryAdjustmentDialogState(
-                    previousLimit = previousLimit,
-                    newLimit = if (adjusted) newLimit else previousLimit,
-                    adjusted = adjusted
+                    currentLimit = currentLimit,
+                    suggestedLimit = suggestedLimit,
+                    canAdjust = suggestedLimit < currentLimit
                 )
             }
         }
@@ -1033,8 +1253,6 @@ class PatcherViewModel(
 
     private companion object {
         private const val TAG = "Morphe Patcher"
-        private const val MEMORY_ADJUSTMENT_MB = 200
-        private const val MIN_LIMIT_MB = 200
 
         private const val KEY_PROGRESS = "patch_progress"
         private const val KEY_STEPS = "steps"

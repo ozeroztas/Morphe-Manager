@@ -8,6 +8,18 @@
         <item quantity="one">%s पट्टी विकल्प</item>
         <item quantity="other">%s पट्टियाँ विकल्प</item>
     </plurals>
+    <plurals name="home_app_patch_sources_title">
+        <item quantity="one">%s ऐप के लिए पैच स्रोत</item>
+        <item quantity="other">%s ऐप्स के लिए पैच स्रोत</item>
+    </plurals>
+    <plurals name="expert_mode_hidden_sources_notice">
+        <item quantity="one">%s स्रोत छिपा हुआ है। दिखाने के लिए टैप करें</item>
+        <item quantity="other">%s स्रोत छिपे हुए हैं। दिखाने के लिए टैप करें</item>
+    </plurals>
+    <plurals name="sources_search_patch_matches">
+        <item quantity="one">%s मेल खाता पैच</item>
+        <item quantity="other">%s मेल खाते पैच</item>
+    </plurals>
     <plurals name="source_count">
         <item quantity="one">%s स्रोत</item>
         <item quantity="other">%s स्रोत</item>
@@ -44,9 +56,9 @@
         <item quantity="one">%s ऐप पैच करने के लिए तैयार है</item>
         <item quantity="other">%s ऐप्स पैच करने के लिए तैयार हैं</item>
     </plurals>
-    <plurals name="batch_patch_notification_ready">
-        <item quantity="one">%s ऐप इंस्टॉल करने के लिए तैयार है</item>
-        <item quantity="other">%s ऐप्स इंस्टॉल करने के लिए तैयार हैं</item>
+    <plurals name="repatch_available_count">
+        <item quantity="one">%s ऐप को फिर से पैच किया जा सकता है</item>
+        <item quantity="other">%s ऐप्स को फिर से पैच किए जा सकते हैं</item>
     </plurals>
     <plurals name="batch_skipped_summary">
         <item quantity="one">%s ऐप छोड़ दिया गया</item>
@@ -60,10 +72,6 @@
         <item quantity="one">%s स्रोत स्थापित</item>
         <item quantity="other">%s स्रोत स्थापित</item>
     </plurals>
-    <plurals name="patch_selection_total_patches">
-        <item quantity="one">%s पटच चुना गया</item>
-        <item quantity="other">%s पटच चुने गए</item>
-    </plurals>
     <plurals name="home_app_show_hidden_count">
         <item quantity="one">%s छिपा ऐप</item>
         <item quantity="other">%s छिपे हुए ऐप</item>
@@ -72,8 +80,16 @@
         <item quantity="one">%s ऐप</item>
         <item quantity="other">%s ऐप्स</item>
     </plurals>
+    <plurals name="expert_mode_selected_count">
+        <item quantity="one">%s चयनित</item>
+        <item quantity="other">%s चयनित</item>
+    </plurals>
     <plurals name="expert_mode_copy_from_bundle_done">
         <item quantity="one">चयनित बंडल से %s पैच कॉपी किया गया</item>
         <item quantity="other">चयनित बंडल से %s पैच कॉपी किए गए</item>
+    </plurals>
+    <plurals name="core_count">
+        <item quantity="one">%s कोर</item>
+        <item quantity="other">%s कोर</item>
     </plurals>
 </resources>

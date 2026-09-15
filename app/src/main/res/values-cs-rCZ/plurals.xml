@@ -12,6 +12,24 @@
         <item quantity="many">%s možností záplaty</item>
         <item quantity="other">%s možností záplaty</item>
     </plurals>
+    <plurals name="home_app_patch_sources_title">
+        <item quantity="one">Zdroje záplat pro %s aplikaci</item>
+        <item quantity="few">Zdroje záplat pro %s aplikace</item>
+        <item quantity="many">Zdroje záplat pro %s aplikací</item>
+        <item quantity="other">Zdroje záplat pro %s aplikací</item>
+    </plurals>
+    <plurals name="expert_mode_hidden_sources_notice">
+        <item quantity="one">%s skrytý zdroj. Klepnutím zobrazíte</item>
+        <item quantity="few">%s skryté zdroje. Klepnutím zobrazíte</item>
+        <item quantity="many">Zdroje záplat pro %s aplikací</item>
+        <item quantity="other">Skryto %s zdrojů. Klepnutím zobrazíte.</item>
+    </plurals>
+    <plurals name="sources_search_patch_matches">
+        <item quantity="one">%s odpovídající záplata</item>
+        <item quantity="few">%s odpovídající záplaty</item>
+        <item quantity="many">%s odpovídajících záplat</item>
+        <item quantity="other">%s odpovídající záplaty</item>
+    </plurals>
     <plurals name="source_count">
         <item quantity="one">%s zdroj</item>
         <item quantity="few">%s zdroje</item>
@@ -66,11 +84,11 @@
         <item quantity="many">%s aplikace připraveny k opravě</item>
         <item quantity="other">%s aplikace připraveny k opravě</item>
     </plurals>
-    <plurals name="batch_patch_notification_ready">
-        <item quantity="one">%s aplikace je připravena k instalaci</item>
-        <item quantity="few">%s aplikace jsou připraveny k instalaci</item>
-        <item quantity="many">%s aplikace jsou připraveny k instalaci</item>
-        <item quantity="other">%s aplikace jsou připraveny k instalaci</item>
+    <plurals name="repatch_available_count">
+        <item quantity="one">%s aplikace může být znovu opravena</item>
+        <item quantity="few">%s aplikace mohou být znovu opraveny</item>
+        <item quantity="many">%s aplikací může být znovu opraveno</item>
+        <item quantity="other">%s aplikací může být znovu opraveno</item>
     </plurals>
     <plurals name="batch_skipped_summary">
         <item quantity="one">Přeskočena %s aplikace</item>
@@ -90,12 +108,6 @@
         <item quantity="many">%s zdrojů nainstalováno</item>
         <item quantity="other">%s zdrojů nainstalováno</item>
     </plurals>
-    <plurals name="patch_selection_total_patches">
-        <item quantity="one">%s záplata vybrána</item>
-        <item quantity="few">%s záplaty vybrány</item>
-        <item quantity="many">%s záplat vybráno</item>
-        <item quantity="other">%s záplat vybráno</item>
-    </plurals>
     <plurals name="home_app_show_hidden_count">
         <item quantity="one">%s skrytá aplikace</item>
         <item quantity="few">%s skryté aplikace</item>
@@ -108,10 +120,22 @@
         <item quantity="many">%s aplikací</item>
         <item quantity="other">%s aplikací</item>
     </plurals>
+    <plurals name="expert_mode_selected_count">
+        <item quantity="one">Vybráno: %s</item>
+        <item quantity="few">Vybráno: %s</item>
+        <item quantity="many">Vybráno: %s</item>
+        <item quantity="other">Vybráno: %s</item>
+    </plurals>
     <plurals name="expert_mode_copy_from_bundle_done">
         <item quantity="one">Zkopírovaná %s záplata z vybraného balíčku</item>
         <item quantity="few">Zkopírovány %s záplaty z vybraného balíčku</item>
         <item quantity="many">Zkopírovány %s záplaty z vybraného balíčku</item>
         <item quantity="other">Zkopírovány %s záplaty z vybraného balíčku</item>
+    </plurals>
+    <plurals name="core_count">
+        <item quantity="one">%s jádro</item>
+        <item quantity="few">%s jádra</item>
+        <item quantity="many">%s jader</item>
+        <item quantity="other">%s jádra</item>
     </plurals>
 </resources>

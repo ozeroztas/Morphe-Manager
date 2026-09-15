@@ -5,6 +5,7 @@
 
 package app.morphe.manager.ui.screen.settings.system
 
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import app.morphe.manager.R
 import app.morphe.manager.domain.installer.InstallerManager
 import app.morphe.manager.domain.installer.SessionInstaller
+import app.morphe.manager.domain.installer.ShizukuEnvironment
 import app.morphe.manager.ui.screen.shared.*
 import app.morphe.manager.ui.viewmodel.InstallViewModel
 import app.morphe.manager.ui.viewmodel.SettingsViewModel
@@ -103,7 +105,7 @@ fun InstallerSelectionDialogContainer(
         settingsViewModel.getInstallerEntries(installTarget, primaryToken)
     }
 
-    val autoInstallEnabled by settingsViewModel.prefs.autoInstallWithShizuku.getAsState()
+    val autoInstallEnabled by settingsViewModel.prefs.autoInstallAfterPatching.getAsState()
     val autoUninstallEnabled by settingsViewModel.prefs.autoUninstallWithShizuku.getAsState()
     val promptEnabled by settingsViewModel.prefs.promptInstallerOnInstall.getAsState()
 
@@ -120,7 +122,7 @@ fun InstallerSelectionDialogContainer(
         shizukuStatusProvider = settingsViewModel::getShizukuStatus,
         onRequestShizukuPermission = settingsViewModel::requestShizukuPermission,
         autoInstallEnabled = autoInstallEnabled,
-        onAutoInstallToggle = settingsViewModel::setAutoInstallWithShizuku,
+        onAutoInstallToggle = settingsViewModel::setAutoInstallAfterPatching,
         autoUninstallEnabled = autoUninstallEnabled,
         onAutoUninstallToggle = settingsViewModel::setAutoUninstallWithShizuku,
         installerPromptEnabled = promptEnabled,
@@ -327,8 +329,14 @@ fun InstallerSelectionDialog(
 
             val showPlayStoreToggle = selectedToken.supportsPlayStoreMode() &&
                     options.any { it.token == selectedToken.withPlayStoreMode(true) }
-            val showAutoInstallToggle = selectedToken.isShizukuToken() && onAutoInstallToggle != null
             val showPromptToggle = onInstallerPromptToggle != null
+            // Offered only where the install can reach the user on its own: Shizuku always, the
+            // system installer through a silent session, which needs Android 12+
+            val showAutoInstallToggle = onAutoInstallToggle != null &&
+                    (selectedToken.isShizukuToken() ||
+                            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                                    selectedToken == InstallerManager.Token.Internal &&
+                                    !installAsPlayStore))
 
             AnimatedVisibility(
                 visible = currentSelection.value == InstallerManager.Token.AutoSaved,
@@ -342,7 +350,15 @@ fun InstallerSelectionDialog(
                 )
             }
 
-            if (showPlayStoreToggle || showAutoInstallToggle || showPromptToggle) {
+            // A divider belongs only between rows that are actually on screen
+            val toggleRows = listOf(
+                showPlayStoreToggle,
+                showAutoInstallToggle,
+                showPromptToggle
+            )
+            fun dividerBefore(row: Int) = toggleRows.take(row).any { it }
+
+            if (toggleRows.any { it }) {
                 SettingsDivider(fullWidth = true)
 
                 SettingsGroup {
@@ -372,7 +388,7 @@ fun InstallerSelectionDialog(
                         exit = Animations.shrinkFadeExit
                     ) {
                         Column {
-                            if (showPlayStoreToggle) SettingsDivider()
+                            if (dividerBefore(1)) SettingsDivider()
                             SettingsSwitchItem(
                                 checked = autoInstallEnabled,
                                 onToggle = {
@@ -388,7 +404,8 @@ fun InstallerSelectionDialog(
                             )
 
                             AnimatedVisibility(
-                                visible = autoInstallEnabled && onAutoUninstallToggle != null,
+                                visible = autoInstallEnabled && onAutoUninstallToggle != null &&
+                                        selectedToken.isShizukuToken(),
                                 enter = Animations.expandFadeEnter,
                                 exit = Animations.shrinkFadeExit
                             ) {
@@ -413,7 +430,7 @@ fun InstallerSelectionDialog(
                     }
 
                     if (showPromptToggle) {
-                        if (showPlayStoreToggle || showAutoInstallToggle) SettingsDivider()
+                        if (dividerBefore(2)) SettingsDivider()
                         SettingsSwitchItem(
                             checked = installerPromptEnabled,
                             onToggle = {
@@ -504,18 +521,19 @@ private fun AutoUninstallWarningDialog(
         onDismissRequest = onDismiss,
         title = stringResource(R.string.settings_auto_uninstall_warning_title),
         footer = {
-            AppDialogButtonColumn {
-                AppDialogButton(
-                    text = stringResource(R.string.installer_play_store_warning_continue),
-                    onClick = onConfirm,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                AppDialogOutlinedButton(
-                    text = stringResource(android.R.string.cancel),
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
+            AppDialogActions(
+                actions = listOf(
+                    DialogAction(
+                        text = stringResource(R.string.installer_play_store_warning_continue),
+                        onClick = onConfirm
+                    ),
+                    DialogAction(
+                        text = stringResource(android.R.string.cancel),
+                        onClick = onDismiss
+                    )
+                ),
+                layout = DialogButtonLayout.Vertical
+            )
         }
     ) {
         Column(
@@ -565,46 +583,56 @@ private fun ShizukuStatusDialog(
         onDismissRequest = onDismiss,
         title = stringResource(R.string.installer_shizuku_status_title),
         footer = {
-            AppDialogButtonColumn {
-                if (current != null &&
-                    current.installed &&
-                    current.running &&
-                    !current.permissionGranted &&
-                    onRequestPermission != null
-                ) {
-                    AppDialogButton(
-                        text = stringResource(R.string.installer_shizuku_request_permission),
-                        onClick = {
-                            runCatching { onRequestPermission.invoke() }
-                            refreshKey++
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        icon = Icons.Outlined.Key
+            AppDialogActions(
+                actions = buildList {
+                    if (current != null &&
+                        current.installed &&
+                        current.running &&
+                        !current.permissionGranted &&
+                        onRequestPermission != null
+                    ) {
+                        add(
+                            DialogAction(
+                                text = stringResource(R.string.installer_shizuku_request_permission),
+                                onClick = {
+                                    runCatching { onRequestPermission.invoke() }
+                                    refreshKey++
+                                },
+                                icon = Icons.Outlined.Key
+                            )
+                        )
+                    }
+
+                    if (onOpenShizuku != null) {
+                        add(
+                            DialogAction(
+                                text = stringResource(R.string.installer_action_open_shizuku),
+                                onClick = { runCatching { onOpenShizuku.invoke() } },
+                                icon = Icons.AutoMirrored.Outlined.OpenInNew,
+                                emphasis = DialogActionEmphasis.Outlined
+                            )
+                        )
+                    }
+
+                    add(
+                        DialogAction(
+                            text = stringResource(R.string.refresh),
+                            onClick = { refreshKey++ },
+                            icon = Icons.Outlined.Refresh,
+                            emphasis = DialogActionEmphasis.Outlined
+                        )
                     )
-                }
 
-                if (onOpenShizuku != null) {
-                    AppDialogOutlinedButton(
-                        text = stringResource(R.string.installer_action_open_shizuku),
-                        onClick = { runCatching { onOpenShizuku.invoke() } },
-                        modifier = Modifier.fillMaxWidth(),
-                        icon = Icons.AutoMirrored.Outlined.OpenInNew
+                    add(
+                        DialogAction(
+                            text = stringResource(R.string.close),
+                            onClick = onDismiss,
+                            emphasis = DialogActionEmphasis.Outlined
+                        )
                     )
-                }
-
-                AppDialogOutlinedButton(
-                    text = stringResource(R.string.refresh),
-                    onClick = { refreshKey++ },
-                    modifier = Modifier.fillMaxWidth(),
-                    icon = Icons.Outlined.Refresh
-                )
-
-                AppDialogOutlinedButton(
-                    text = stringResource(android.R.string.ok),
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
+                },
+                layout = DialogButtonLayout.Vertical
+            )
         }
     ) {
         Column(
@@ -630,38 +658,37 @@ private fun ShizukuStatusDialog(
                     )
                 }
 
-                ShizukuStatusRow(
-                    label = stringResource(R.string.installer_shizuku_status_mode),
-                    value = when (current.mode) {
-                        SessionInstaller.ShizukuMode.Shizuku -> stringResource(R.string.home_app_info_install_type_shizuku)
-                        SessionInstaller.ShizukuMode.Sui -> "Sui"
-                    }
-                )
-                ShizukuStatusRow(
-                    label = stringResource(R.string.installed),
-                    value = statusYesNo(current.installed)
-                )
-                ShizukuStatusRow(
-                    label = stringResource(R.string.installer_shizuku_status_supported),
-                    value = statusYesNo(current.supported)
-                )
-                ShizukuStatusRow(
-                    label = stringResource(R.string.installer_shizuku_status_running),
-                    value = statusYesNo(current.running)
-                )
-                ShizukuStatusRow(
-                    label = stringResource(R.string.installer_shizuku_status_permission),
-                    value = if (current.permissionGranted) {
-                        stringResource(R.string.installer_shizuku_status_granted)
-                    } else {
-                        stringResource(R.string.installer_shizuku_status_missing)
-                    }
-                )
-                current.packageName?.let { provider ->
+                if (current.installed) {
                     ShizukuStatusRow(
-                        label = stringResource(R.string.installer_shizuku_status_provider),
-                        value = provider
+                        label = stringResource(R.string.installer_shizuku_status_mode),
+                        value = when (current.flavor) {
+                            ShizukuEnvironment.Flavor.Shizuku -> stringResource(R.string.home_app_info_install_type_shizuku)
+                            ShizukuEnvironment.Flavor.ShizukuPlus -> "Shizuku+"
+                            ShizukuEnvironment.Flavor.Sui -> "Sui"
+                        }
                     )
+                    ShizukuStatusRow(
+                        label = stringResource(R.string.installer_shizuku_status_supported),
+                        value = statusYesNo(current.supported)
+                    )
+                    ShizukuStatusRow(
+                        label = stringResource(R.string.installer_shizuku_status_running),
+                        value = statusYesNo(current.running)
+                    )
+                    ShizukuStatusRow(
+                        label = stringResource(R.string.installer_shizuku_status_permission),
+                        value = if (current.permissionGranted) {
+                            stringResource(R.string.installer_shizuku_status_granted)
+                        } else {
+                            stringResource(R.string.installer_shizuku_status_missing)
+                        }
+                    )
+                    current.packageName?.let { provider ->
+                        ShizukuStatusRow(
+                            label = stringResource(R.string.installer_shizuku_status_provider),
+                            value = provider
+                        )
+                    }
                 }
             } else {
                 CircularProgressIndicator(
@@ -817,41 +844,49 @@ fun InstallerUnavailableDialog(
         onDismissRequest = onDismiss,
         title = stringResource(R.string.installer_unavailable_title, installerName),
         footer = {
-            AppDialogButtonColumn {
-                // Primary action - Retry
-                AppDialogButton(
-                    text = stringResource(R.string.retry),
-                    onClick = onRetry,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // Secondary action - Open app (if available)
-                if (state.canOpenApp) {
-                    AppDialogButton(
-                        text = when (state.installerToken) {
-                            InstallerManager.Token.Shizuku -> stringResource(R.string.installer_action_open_shizuku)
-                            InstallerManager.Token.ShizukuPlayStore -> stringResource(R.string.installer_action_open_shizuku)
-                            else -> stringResource(R.string.open)
-                        },
-                        onClick = onOpenApp,
-                        modifier = Modifier.fillMaxWidth()
+            AppDialogActions(
+                actions = buildList {
+                    // Primary action - Retry
+                    add(
+                        DialogAction(
+                            text = stringResource(R.string.retry),
+                            onClick = onRetry
+                        )
                     )
-                }
 
-                // Fallback option
-                AppDialogOutlinedButton(
-                    text = stringResource(R.string.installer_use_standard),
-                    onClick = onUseFallback,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                    // Secondary action - Open app (if available)
+                    if (state.canOpenApp) {
+                        add(
+                            DialogAction(
+                                text = when (state.installerToken) {
+                                    InstallerManager.Token.Shizuku -> stringResource(R.string.installer_action_open_shizuku)
+                                    InstallerManager.Token.ShizukuPlayStore -> stringResource(R.string.installer_action_open_shizuku)
+                                    else -> stringResource(R.string.open)
+                                },
+                                onClick = onOpenApp,
+                                emphasis = DialogActionEmphasis.Filled
+                            )
+                        )
+                    }
 
-                // Cancel
-                AppDialogOutlinedButton(
-                    text = stringResource(android.R.string.cancel),
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
+                    // Fallback option
+                    add(
+                        DialogAction(
+                            text = stringResource(R.string.installer_use_standard),
+                            onClick = onUseFallback
+                        )
+                    )
+
+                    // Cancel
+                    add(
+                        DialogAction(
+                            text = stringResource(android.R.string.cancel),
+                            onClick = onDismiss
+                        )
+                    )
+                },
+                layout = DialogButtonLayout.Vertical
+            )
         }
     ) {
         Column(
@@ -903,18 +938,19 @@ fun PlayStoreInstallerWarningDialog(
         onDismissRequest = onDismiss,
         title = stringResource(R.string.installer_play_store_warning_title),
         footer = {
-            AppDialogButtonColumn {
-                AppDialogButton(
-                    text = stringResource(R.string.installer_play_store_warning_continue),
-                    onClick = onConfirm,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                AppDialogOutlinedButton(
-                    text = stringResource(android.R.string.cancel),
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
+            AppDialogActions(
+                actions = listOf(
+                    DialogAction(
+                        text = stringResource(R.string.installer_play_store_warning_continue),
+                        onClick = onConfirm
+                    ),
+                    DialogAction(
+                        text = stringResource(android.R.string.cancel),
+                        onClick = onDismiss
+                    )
+                ),
+                layout = DialogButtonLayout.Vertical
+            )
         }
     ) {
         Column(

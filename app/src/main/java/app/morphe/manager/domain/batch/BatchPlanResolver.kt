@@ -6,10 +6,11 @@
 package app.morphe.manager.domain.batch
 
 import android.content.pm.PackageInfo
+import android.os.Build
 import android.util.Log
 import app.morphe.manager.data.platform.Filesystem
+import app.morphe.manager.data.room.apps.installed.trackingKey
 import app.morphe.manager.domain.bundles.AppVersionCatalog
-import app.morphe.manager.domain.bundles.AppVersionHints
 import app.morphe.manager.domain.manager.PatchOptionsPreferencesManager
 import app.morphe.manager.domain.manager.PreferencesManager
 import app.morphe.manager.domain.repository.InstalledAppRepository
@@ -17,21 +18,26 @@ import app.morphe.manager.domain.repository.OriginalApkRepository
 import app.morphe.manager.domain.repository.PatchBundleRepository
 import app.morphe.manager.domain.repository.PatchOptionsRepository
 import app.morphe.manager.domain.repository.PatchSelectionRepository
+import app.morphe.manager.patcher.patch.ApkArchitectureResolver
 import app.morphe.manager.patcher.patch.PatchBundleInfo
 import app.morphe.manager.patcher.patch.PatchBundleInfo.Extensions.toPatchSelection
-import app.morphe.manager.patcher.patch.SELECTION_APK_ARCHITECTURE
+import app.morphe.manager.patcher.patch.PatchInfo
 import app.morphe.manager.patcher.patch.installerTypeFor
 import app.morphe.manager.patcher.split.SplitApkInspector
 import app.morphe.manager.patcher.split.SplitApkPreparer
+import app.morphe.manager.ui.model.declaresPackageName
 import app.morphe.manager.util.AppDataResolver
 import app.morphe.manager.util.AppDataSource
 import app.morphe.manager.util.Options
 import app.morphe.manager.util.PM
 import app.morphe.manager.util.PatchSelection
 import app.morphe.manager.util.PatchSelectionUtils.applyAvailability
-import app.morphe.manager.util.PatchSelectionUtils.filterGmsCore
 import app.morphe.manager.util.PatchSelectionUtils.validatePatchOptions
 import app.morphe.manager.util.PatchSelectionUtils.validatePatchSelection
+import app.morphe.manager.util.validateOptionPaths
+import app.morphe.manager.util.withoutFailingPaths
+import app.morphe.patcher.patch.ApkArchitecture
+import app.morphe.patcher.patch.InstallerType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -42,12 +48,94 @@ import java.io.File
 
 private const val TAG = "Morphe BatchPlanResolver"
 
+/** Stands in for the version of an APK that does not declare one, which is still patchable. */
+private const val UNSPECIFIED_VERSION = "unspecified"
+
+/**
+ * Whether an attached APK may be patched without asking, given the certificates the sources
+ * [declared] for the app and the [hashes] read out of the file itself.
+ *
+ * The same question the single-app picker answers before patching, and answered permissively
+ * wherever it cannot be answered at all: [sdkInt] 29 and below cannot read certificates out of an
+ * archive, an app no source declares certificates for has nothing to be checked against, and null
+ * [hashes] mean the archive would not open, which says nothing either way. Empty [hashes] are the
+ * opposite case and do count against the file: the archive opened and carried no certificate.
+ */
+internal fun apkSignatureAccepted(sdkInt: Int, declared: Set<String>?, hashes: Set<String>?): Boolean {
+    if (sdkInt <= Build.VERSION_CODES.Q) return true
+    if (declared.isNullOrEmpty()) return true
+    if (hashes == null) return true
+    return hashes.any { it in declared }
+}
+
+/**
+ * The patches of a source that appeared since a saved configuration was last written, and so are
+ * selected by their own default rather than by what the user saved.
+ *
+ * [known] is what that configuration recorded for the source: its seen-patch snapshot, or the
+ * saved selection itself where no snapshot exists yet. Null means the source was not part of the
+ * configuration at all, which is a different thing entirely from a source whose patches are all
+ * new: a source added after the app was configured contributes nothing until the user picks from
+ * it, the same way the expert dialog leaves it alone.
+ */
+internal fun newlyAddedDefaults(
+    patches: List<PatchInfo>,
+    known: Set<String>?,
+    installerType: InstallerType,
+    apkArchitecture: ApkArchitecture
+): Set<String> {
+    if (known == null) return emptySet()
+    return patches
+        .filter { it.name !in known && it.defaultSelected(installerType, apkArchitecture) }
+        .mapTo(mutableSetOf()) { it.name }
+}
+
+/**
+ * A saved selection brought up to date with the patches added since it was made.
+ *
+ * [validated] is that selection with patches the sources no longer carry already removed. Every
+ * bundle in [bundles] then contributes what [newlyAddedDefaults] asks for, measured against the
+ * names [known] recalls for it.
+ *
+ * A bundle outside [bundles] keeps whatever [validated] holds for it. That is how a source the app
+ * is kept from keeps the selection made from it while taking no part in the run.
+ */
+internal fun mergeNewlyAdded(
+    bundles: List<PatchBundleInfo.Scoped>,
+    validated: PatchSelection,
+    known: (bundleUid: Int) -> Set<String>?,
+    installerType: InstallerType,
+    apkArchitecture: ApkArchitecture
+): PatchSelection = buildMap {
+    putAll(validated)
+
+    bundles.forEach { bundle ->
+        val added = newlyAddedDefaults(
+            patches = bundle.patches,
+            known = known(bundle.uid),
+            installerType = installerType,
+            apkArchitecture = apkArchitecture
+        )
+        if (added.isNotEmpty()) put(bundle.uid, getOrDefault(bundle.uid, emptySet()) + added)
+    }
+}.filterValues { it.isNotEmpty() }
+
+/** Architecture of the APK an item is patched from, see [ApkArchitectureResolver]. */
+internal suspend fun BatchApkSource.apkArchitecture() = when (this) {
+    is BatchApkSource.SavedOriginal -> ApkArchitectureResolver.resolve(file)
+    is BatchApkSource.UserFile -> ApkArchitectureResolver.resolve(file)
+    is BatchApkSource.Installed ->
+        ApkArchitectureResolver.resolve((listOf(apkPath) + splitPaths).map(::File))
+}
+
 /**
  * Turns a list of package names into a runnable batch plan.
  *
  * Every decision the interactive flow would raise a dialog for is resolved here into an item
  * state instead: a missing APK becomes [BatchItemState.NEEDS_APK], an unsupported version
- * becomes [BatchItemState.VERSION_MISMATCH]. The queue itself then runs without prompts.
+ * becomes [BatchItemState.VERSION_MISMATCH], and an APK signed by someone the bundles do not
+ * vouch for becomes [BatchItemState.UNVERIFIED_SIGNATURE]. The queue itself then runs without
+ * prompts.
  */
 class BatchPlanResolver(
     private val patchBundleRepository: PatchBundleRepository,
@@ -69,90 +157,115 @@ class BatchPlanResolver(
      *   that declare themselves unavailable for it are dropped just like the single-app flow does.
      */
     suspend fun resolve(
-        packageNames: List<String>,
+        targets: List<BatchTarget>,
         useMount: Boolean
     ): List<BatchPatchItem> = coroutineScope {
         // Built once for the whole plan: it is derived from every patch of every source, and
         // resolving it per app would repeat that work for each one of them
-        val hints = versionCatalog.hints()
-        packageNames
-            .distinct()
-            .map { packageName -> async { resolve(packageName, useMount, hints = hints[packageName]) } }
+        val recommended = versionCatalog.recommendedVersions.first()
+        targets
+            .distinctBy { it.id }
+            .map { target ->
+                async {
+                    resolve(target, useMount, suggestedVersion = recommended[target.packageName]?.version)
+                }
+            }
             .awaitAll()
     }
 
     /**
-     * Resolves a single package. [attachedFile] overrides source discovery and is used when
+     * Resolves a single target. [attachedFile] overrides source discovery and is used when
      * the user attaches an APK from the preflight screen.
+     *
+     * @param suggestedVersion Passed in when the whole plan already resolved it, so the version
+     *   catalog is not rebuilt once per app; looked up here otherwise.
+     * @param allowUnverifiedSignature Set once the user has accepted an APK whose signing
+     *   certificate no bundle vouches for, so the same file is not questioned twice.
      */
     suspend fun resolve(
-        packageName: String,
+        target: BatchTarget,
         useMount: Boolean,
         attachedFile: File? = null,
-        hints: AppVersionHints? = null,
+        suggestedVersion: String? = null,
         allowIncompatible: Boolean = false,
+        allowUnverifiedSignature: Boolean = false,
         preferInstalled: Boolean = false
     ): BatchPatchItem = withContext(Dispatchers.IO) {
-        val appName = resolveAppName(packageName)
-        val versions = hints ?: versionCatalog.hints(packageName)
-        val suggested = versions?.recommendedVersion
+        val packageName = target.packageName
+        val appName = resolveAppName(target)
+        val suggested = suggestedVersion ?: versionCatalog.recommendedVersion(packageName)
+
+        val attached = try {
+            attachedFile?.let { readAttachedApk(it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read the attached APK for $packageName", e)
+            null
+        }
 
         val source = try {
-            attachedFile?.let { readAttachedFile(it) } ?: findSource(packageName, preferInstalled)
+            attached?.asSource() ?: findSource(packageName, preferInstalled)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to resolve APK source for $packageName", e)
             null
         }
 
-        if (source == null) {
-            return@withContext BatchPatchItem(
-                packageName = packageName,
-                appName = appName,
-                source = null,
-                selection = emptyMap(),
-                options = emptyMap(),
-                bundles = emptyList(),
-                suggestedVersion = suggested,
-                state = BatchItemState.NEEDS_APK
-            )
-        }
+        /** Blocks the item without a source, which is every reason it has to be replaced. */
+        fun unusable(state: BatchItemState, message: String? = null) = BatchPatchItem(
+            target = target,
+            appName = appName,
+            source = null,
+            selection = emptyMap(),
+            options = emptyMap(),
+            bundles = emptyList(),
+            suggestedVersion = suggested,
+            state = state,
+            message = message
+        )
 
-        if (attachedFile != null) {
-            val actualPackage = readAttachedPackageName(attachedFile)
-            if (actualPackage != null && actualPackage != packageName) {
+        if (source == null) return@withContext unusable(BatchItemState.NEEDS_APK)
+
+        if (attached != null) {
+            if (attached.packageName != null && attached.packageName != packageName) {
+                return@withContext unusable(BatchItemState.NEEDS_APK, attached.packageName)
+            }
+
+            if (!allowUnverifiedSignature && !attached.isSignedAsDeclaredFor(packageName)) {
+                // The file is kept rather than dropped: accepting it is one tap away, and the
+                // user would otherwise have to download the very same APK again to get there
                 return@withContext BatchPatchItem(
-                    packageName = packageName,
+                    target = target,
                     appName = appName,
-                    source = null,
+                    source = source,
                     selection = emptyMap(),
                     options = emptyMap(),
                     bundles = emptyList(),
                     suggestedVersion = suggested,
-                    state = BatchItemState.NEEDS_APK,
-                    message = actualPackage
+                    state = BatchItemState.UNVERIFIED_SIGNATURE
                 )
             }
         }
 
         buildItem(
-            packageName = packageName,
+            target = target,
             appName = appName,
             source = source,
             useMount = useMount,
             suggested = suggested,
-            experimental = source.version in versions?.experimentalVersions.orEmpty(),
             forceIncompatible = allowIncompatible
         )
     }
 
     /**
-     * Packages whose patches have moved on since they were last built: any bundle an app was
+     * Installs whose patches have moved on since they were last built: any bundle an install was
      * patched with now reports a different version than the one recorded at patch time.
+     *
+     * Every install is answered for separately, so an app kept in several cloned copies has each
+     * of them rebuilt rather than only whichever copy the app's package name resolves to.
      *
      * Shared by the automatic schedule and the launcher shortcut, both of which need the same
      * answer to the question "what is worth re-patching right now".
      */
-    suspend fun findOutdatedPackages(): List<String> = withContext(Dispatchers.IO) {
+    suspend fun findOutdatedTargets(): List<BatchTarget> = withContext(Dispatchers.IO) {
         // Scoped to the sources planning will actually use. A disabled or blocked source moving
         // on is not a reason to re-patch, and the plan would only report No patches anyway
         val currentVersions = patchBundleRepository.enabledBundlesInfoFlow.first()
@@ -168,8 +281,12 @@ class BatchPlanResolver(
                     storedVersion != null && storedVersion != currentVersion
                 }
             }
-            .map { it.originalPackageName }
-            .distinct()
+            .map { installed ->
+                BatchTarget(
+                    packageName = installed.originalPackageName,
+                    repatchedPackageName = installed.trackingKey
+                )
+            }
     }
 
     /**
@@ -178,7 +295,7 @@ class BatchPlanResolver(
      */
     suspend fun reattach(item: BatchPatchItem, file: File, useMount: Boolean): BatchPatchItem =
         resolve(
-            packageName = item.packageName,
+            target = item.target,
             useMount = useMount,
             attachedFile = file,
             // A forced item stays runnable after swapping its APK, so the user does not have
@@ -192,7 +309,7 @@ class BatchPlanResolver(
      */
     suspend fun useSource(item: BatchPatchItem, useMount: Boolean, preferInstalled: Boolean): BatchPatchItem =
         resolve(
-            packageName = item.packageName,
+            target = item.target,
             useMount = useMount,
             allowIncompatible = item.forceVersionMismatch,
             preferInstalled = preferInstalled
@@ -204,25 +321,50 @@ class BatchPlanResolver(
      */
     suspend fun forceVersion(item: BatchPatchItem, useMount: Boolean): BatchPatchItem =
         resolve(
-            packageName = item.packageName,
+            target = item.target,
             useMount = useMount,
             attachedFile = (item.source as? BatchApkSource.UserFile)?.file,
-            allowIncompatible = true
-        ).copy(forceVersionMismatch = true)
+            allowIncompatible = true,
+            allowUnverifiedSignature = item.forceUnverifiedSignature
+        ).copy(
+            forceVersionMismatch = true,
+            forceUnverifiedSignature = item.forceUnverifiedSignature
+        )
+
+    /**
+     * Re-resolves an app whose attached APK the user accepted despite its unknown signing
+     * certificate. The file is reused rather than asked for again, so accepting costs a tap
+     * instead of a second download.
+     */
+    suspend fun acceptUnverifiedSignature(item: BatchPatchItem, useMount: Boolean): BatchPatchItem =
+        resolve(
+            target = item.target,
+            useMount = useMount,
+            attachedFile = (item.source as? BatchApkSource.UserFile)?.file,
+            allowIncompatible = item.forceVersionMismatch,
+            allowUnverifiedSignature = true
+        ).copy(
+            forceVersionMismatch = item.forceVersionMismatch,
+            forceUnverifiedSignature = true
+        )
 
     private suspend fun buildItem(
-        packageName: String,
+        target: BatchTarget,
         appName: String,
         source: BatchApkSource,
         useMount: Boolean,
         suggested: String?,
-        experimental: Boolean,
         forceIncompatible: Boolean
     ): BatchPatchItem {
+        val packageName = target.packageName
         val bundles = patchBundleRepository
-            .scopedBundleInfoFlow(packageName, source.version, source.versionCode)
+            .offeredBundleInfoFlow(packageName, source.version, source.versionCode)
             .first()
             .filter { it.enabled }
+
+        // Asked of the bundles the APK is being resolved against rather than of the version
+        // catalog, so the badge cannot disagree with the warning the single-app flow shows
+        val experimental = bundles.any { it.isVersionExperimental }
 
         // Forced per app from the preflight screen, or globally by the compatibility setting
         val allowIncompatible = forceIncompatible || prefs.disablePatchVersionCompatCheck.get()
@@ -238,7 +380,7 @@ class BatchPlanResolver(
          * would hide both the reason and the buttons that fix it.
          */
         fun blocked(contributing: List<PatchBundleInfo.Scoped> = emptyList()) = BatchPatchItem(
-            packageName = packageName,
+            target = target,
             appName = appName,
             source = source,
             selection = emptyMap(),
@@ -256,14 +398,26 @@ class BatchPlanResolver(
         val contributing = bundles.filter { it.patchSequence(allowIncompatible).any() }
         if (contributing.isEmpty()) return blocked()
 
-        val selection = resolveSelection(packageName, contributing, allowIncompatible, useMount)
+        val configurationKey = configurationKeyFor(target)
+        val selection = resolveSelection(
+            configurationKey = configurationKey,
+            bundles = contributing,
+            allowIncompatible = allowIncompatible,
+            useMount = useMount,
+            apkArchitecture = source.apkArchitecture()
+        )
 
         if (selection.values.sumOf { it.size } == 0) return blocked(contributing)
 
-        val options = resolveOptions(packageName, contributing)
+        val savedOptions = resolveOptions(target, configurationKey, contributing)
+
+        // A queue must not stop to ask about one app, so a path that leads nowhere is dropped
+        // here and reported on the preflight screen instead of failing inside the patcher
+        val unreadablePaths = validateOptionPaths(savedOptions)
+        val options = savedOptions.withoutFailingPaths(unreadablePaths)
 
         return BatchPatchItem(
-            packageName = packageName,
+            target = target,
             appName = appName,
             source = source,
             selection = selection,
@@ -271,6 +425,7 @@ class BatchPlanResolver(
             bundles = contributing.map { it.toRef() },
             experimentalVersion = experimental,
             suggestedVersion = suggested,
+            unreadableOptionPaths = unreadablePaths,
             state = if (versionMismatch) BatchItemState.VERSION_MISMATCH else BatchItemState.READY
         )
     }
@@ -279,7 +434,10 @@ class BatchPlanResolver(
         uid = uid,
         name = name,
         version = version,
-        patchNames = patches.mapTo(mutableSetOf()) { it.name }
+        patchNames = patches.mapTo(mutableSetOf()) { it.name },
+        renamingPatchNames = patches
+            .filter { it.declaresPackageName }
+            .mapTo(mutableSetOf()) { it.name }
     )
 
     /**
@@ -288,120 +446,162 @@ class BatchPlanResolver(
      * reached, the patches' own availability for the install target has the final say.
      */
     private suspend fun resolveSelection(
-        packageName: String,
+        configurationKey: String,
         bundles: List<PatchBundleInfo.Scoped>,
         allowIncompatible: Boolean,
-        useMount: Boolean
+        useMount: Boolean,
+        apkArchitecture: ApkArchitecture
     ): PatchSelection {
         val installerType = installerTypeFor(useMount)
         val uids = bundles.mapTo(mutableSetOf()) { it.uid }
         val patchesByName = bundles.associate { it.uid to it.patches.associateBy { patch -> patch.name } }
-        val saved = patchSelectionRepository.getAllSelectionsForPackage(packageName)
+        val saved = patchSelectionRepository.getAllSelectionsForPackage(configurationKey)
             .filterKeys { it in uids }
 
         if (saved.isNotEmpty()) {
             val validated = validatePatchSelection(saved, patchesByName)
+            val seenByBundle = bundles.associate {
+                it.uid to patchSelectionRepository.getSeenPatches(configurationKey, it.uid)
+            }
 
-            val merged = bundles.associate { bundle ->
-                val seen = patchSelectionRepository.getSeenPatches(packageName, bundle.uid)
-                val known = seen ?: saved[bundle.uid] ?: emptySet()
-
-                // Patches added to the bundle since the last run follow their own default,
-                // the same rule the expert dialog applies when it merges new patches in
-                val newDefaults = bundle.patches
-                    .filter {
-                        it.name !in known && it.defaultSelected(installerType, SELECTION_APK_ARCHITECTURE)
-                    }
-                    .mapTo(mutableSetOf()) { it.name }
-
-                bundle.uid to (validated[bundle.uid].orEmpty() + newDefaults)
-            }.filterValues { it.isNotEmpty() }
+            // Patches added to a bundle since the last run follow their own default, the same
+            // rule the expert dialog applies when it merges new patches in
+            val merged = mergeNewlyAdded(
+                bundles = bundles,
+                validated = validated,
+                known = { uid -> seenByBundle[uid] ?: saved[uid] },
+                installerType = installerType,
+                apkArchitecture = apkArchitecture
+            )
 
             if (merged.isNotEmpty()) {
-                return merged
-                    .applyAvailability(installerType, SELECTION_APK_ARCHITECTURE, patchesByName)
-                    .applyLegacyMountRules(useMount)
+                return merged.applyAvailability(installerType, apkArchitecture, patchesByName)
             }
         }
 
         return bundles
             .toPatchSelection(allowIncompatible) { _, patch ->
-                patch.defaultSelected(installerType, SELECTION_APK_ARCHITECTURE)
+                patch.defaultSelected(installerType, apkArchitecture)
             }
             .filterValues { it.isNotEmpty() }
-            .applyAvailability(installerType, SELECTION_APK_ARCHITECTURE, patchesByName)
-            .applyLegacyMountRules(useMount)
+            .applyAvailability(installerType, apkArchitecture, patchesByName)
     }
-
-    // Safety net for bundles that have not adopted the availability API
-    // TODO: Drop this fallback together with PatchSelectionUtils.filterGmsCore
-    @Suppress("DEPRECATION")
-    private fun PatchSelection.applyLegacyMountRules(useMount: Boolean): PatchSelection =
-        if (useMount) filterGmsCore() else this
 
     /**
      * Expert mode stores options per bundle in the database, simple mode derives them from the
      * per-app preference screen. The patcher is handed whichever set the active mode owns.
+     *
+     * Only the database is keyed per install: the preference screen belongs to the app, so every
+     * copy of it is built with what the user set there.
      */
     private suspend fun resolveOptions(
-        packageName: String,
+        target: BatchTarget,
+        configurationKey: String,
         bundles: List<PatchBundleInfo.Scoped>
     ): Options {
         if (!prefs.useExpertMode.get()) {
-            return runCatching { patchOptionsPrefs.exportPatchOptions(packageName) }
+            return runCatching { patchOptionsPrefs.exportPatchOptions(target.packageName) }
                 .getOrDefault(emptyMap())
         }
 
         val uids = bundles.mapTo(mutableSetOf()) { it.uid }
         val patchesByName = bundles.associate { it.uid to it.patches.associateBy { patch -> patch.name } }
-        val saved = patchOptionsRepository.getAllOptionsForPackage(packageName, patchesByName)
+        val saved = patchOptionsRepository.getAllOptionsForPackage(configurationKey, patchesByName)
             .filterKeys { it in uids }
         return validatePatchOptions(saved, patchesByName)
+    }
+
+    /**
+     * Where a target's saved patches and options live: its own package once it is an install of
+     * its own, falling back to the app for a clone that predates configurations of their own.
+     */
+    private suspend fun configurationKeyFor(target: BatchTarget): String {
+        val repatched = target.repatchedPackageName?.takeUnless { it == target.packageName }
+            ?: return target.packageName
+
+        val hasOwnConfiguration = patchSelectionRepository
+            .getAllSelectionsForPackage(repatched)
+            .isNotEmpty()
+        return if (hasOwnConfiguration) repatched else target.packageName
     }
 
     /**
      * Same resolution the home screen uses. Patching renames packages, so an app that is only
      * saved can be named from its APK alone, which is what the resolver falls back through.
      */
-    private suspend fun resolveAppName(packageName: String): String =
+    private suspend fun resolveAppName(target: BatchTarget): String =
         appDataResolver.resolveAppData(
-            packageName = packageName,
+            packageName = target.id,
             preferredSource = AppDataSource.ORIGINAL_APK
         ).displayName
 
-    private suspend fun readAttachedFile(file: File): BatchApkSource? {
-        if (!file.exists()) return null
-
-        val info = readAttachedPackageInfo(file)
-        return BatchApkSource.UserFile(
+    /**
+     * Everything one read of an attached archive yields.
+     *
+     * Identity and certificates come from the same read because unpacking a split archive to get
+     * at either of them is the expensive part, and doing it once keeps the two answers consistent.
+     *
+     * @param signatureHashes Empty when the certificates are unreadable, which is not the same as
+     *   null: null means the archive itself could not be opened, so it says nothing about the APK.
+     */
+    private data class AttachedApk(
+        val file: File,
+        val packageName: String?,
+        val version: String,
+        val versionCode: Long?,
+        val signatureHashes: Set<String>?
+    ) {
+        fun asSource() = BatchApkSource.UserFile(
             file = file,
-            version = info?.versionName?.takeUnless { it.isBlank() } ?: "unspecified",
-            versionCode = info?.let { pm.getVersionCode(it) }
+            version = version,
+            versionCode = versionCode
         )
     }
 
-    /** Package name declared by an attached file, or null when it cannot be read. */
-    private suspend fun readAttachedPackageName(file: File): String? =
-        runCatching { readAttachedPackageInfo(file)?.packageName }.getOrNull()
+    private suspend fun readAttachedApk(file: File): AttachedApk? {
+        if (!file.exists()) return null
+        if (!SplitApkPreparer.isSplitArchive(file)) return readApk(file, file)
+
+        // A split archive is not a valid APK, so the representative base entry is extracted
+        // first, exactly like the single-app picker does
+        val extracted = SplitApkInspector.extractRepresentativeApk(
+            source = file,
+            workspace = fs.uiTempDir
+        ) ?: return AttachedApk(
+            file = file,
+            packageName = null,
+            version = UNSPECIFIED_VERSION,
+            versionCode = null,
+            signatureHashes = null
+        )
+
+        return try {
+            readApk(extracted.file, file)
+        } finally {
+            extracted.cleanup()
+        }
+    }
 
     /**
-     * Reads package info from an attached file. Split archives are not valid APKs, so the
-     * representative base entry is extracted first, exactly like the single-app picker does.
+     * Reads a plain APK, reporting it as [attachedTo] so a split archive is described by its
+     * base entry while the queue keeps working with the archive the user actually attached.
      */
-    private suspend fun readAttachedPackageInfo(file: File): PackageInfo? =
-        if (SplitApkPreparer.isSplitArchive(file)) {
-            val extracted = SplitApkInspector.extractRepresentativeApk(
-                source = file,
-                workspace = fs.uiTempDir
-            )
-            try {
-                extracted?.let { pm.getPackageInfo(it.file) }
-            } finally {
-                extracted?.cleanup()
-            }
-        } else {
-            pm.getPackageInfo(file)
-        }
+    private fun readApk(apk: File, attachedTo: File): AttachedApk {
+        val info: PackageInfo? = pm.getPackageInfo(apk)
+        return AttachedApk(
+            file = attachedTo,
+            packageName = info?.packageName,
+            version = info?.versionName?.takeUnless { it.isBlank() } ?: UNSPECIFIED_VERSION,
+            versionCode = info?.let { pm.getVersionCode(it) },
+            signatureHashes = pm.getApkFileSignatureHashes(apk)
+        )
+    }
+
+    private fun AttachedApk.isSignedAsDeclaredFor(packageName: String) = apkSignatureAccepted(
+        sdkInt = Build.VERSION.SDK_INT,
+        declared = patchBundleRepository.appMetadata.value[packageName]?.signatures,
+        hashes = signatureHashes
+    )
 
     /**
      * Source priority for unattended runs: the saved original first because it is known to be

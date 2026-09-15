@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -29,10 +30,18 @@ import app.morphe.manager.domain.repository.PatchBundleRepository
 import app.morphe.manager.ui.screen.shared.Animations
 import app.morphe.manager.ui.screen.shared.ThemedIcon
 import app.morphe.manager.ui.viewmodel.BundleUpdateStatus
+import app.morphe.manager.util.formatMegabytes
 
 /** Visibility flag paired with the tap callback for a single [AlertSnackbar] slot. */
 @Immutable
 data class AlertState(val visible: Boolean, val onShow: () -> Unit)
+
+/**
+ * The apps whose patches have moved on, and the tap that queues them. Shown from one app up,
+ * which is also when the cards themselves start showing their update badge.
+ */
+@Immutable
+data class RepatchAlertState(val count: Int, val visible: Boolean, val onShow: () -> Unit)
 
 /** Transient state driving the bundle-update progress snackbar. */
 @Immutable
@@ -47,9 +56,11 @@ data class BundleUpdateState(
 data class HomeNotificationsUi(
     val managerUpdate: AlertState,
     val outdatedManager: AlertState,
+    val heldBackSources: AlertState,
     val blockedSources: AlertState,
     val metadataErrors: AlertState,
     val meteredSkipped: AlertState,
+    val repatchAvailable: RepatchAlertState,
     val bundleUpdate: BundleUpdateState
 )
 
@@ -79,6 +90,18 @@ fun NotificationsOverlay(
                 subtitle = stringResource(R.string.home_blocked_source_subtitle),
                 onShowDetails = notifications.blockedSources.onShow,
                 swipeEnabled = false,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // The one alert raised by something that already went wrong rather than something
+            // that might, so it sits above the rest
+            AlertSnackbar(
+                visible = notifications.heldBackSources.visible,
+                level = AlertLevel.Error,
+                icon = Icons.Outlined.ErrorOutline,
+                title = stringResource(R.string.home_held_back_title),
+                subtitle = stringResource(R.string.home_held_back_subtitle),
+                onShowDetails = notifications.heldBackSources.onShow,
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -120,6 +143,23 @@ fun NotificationsOverlay(
                 title = stringResource(R.string.home_update_available),
                 subtitle = stringResource(R.string.home_update_available_subtitle),
                 onShowDetails = notifications.managerUpdate.onShow,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // The badges on the cards say the same thing one app at a time. This says it once
+            // and queues every one of them, which is the part that is otherwise several taps
+            AlertSnackbar(
+                visible = notifications.repatchAvailable.visible &&
+                        notifications.repatchAvailable.count > 0,
+                level = AlertLevel.Info,
+                icon = Icons.Outlined.AutoFixHigh,
+                title = pluralStringResource(
+                    R.plurals.repatch_available_count,
+                    notifications.repatchAvailable.count,
+                    notifications.repatchAvailable.count.toString()
+                ),
+                subtitle = stringResource(R.string.home_repatch_available_subtitle),
+                onShowDetails = notifications.repatchAvailable.onShow,
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -388,8 +428,8 @@ private fun BundleUpdateSnackbarContent(
                     }
 
                     if (status == BundleUpdateStatus.Updating && progress != null) {
-                        val totalMb = (progress.bytesTotal ?: 0L).toFloat() / (1024 * 1024)
-                        val readMb = progress.bytesRead.toFloat() / (1024 * 1024)
+                        val totalMb = formatMegabytes(progress.bytesTotal ?: 0L)
+                        val readMb = formatMegabytes(progress.bytesRead)
                         val percent = (downloadFraction * 100).toInt()
                         val (subtitleKey, subtitle) = when {
                             progress.total > 1 && isDownloading -> 1 to stringResource(
@@ -401,7 +441,7 @@ private fun BundleUpdateSnackbarContent(
                                 progress.completed, progress.total
                             )
                             isDownloading -> 3 to stringResource(
-                                R.string.home_update_download_progress,
+                                R.string.download_progress,
                                 readMb, totalMb, percent.toString()
                             )
                             progress.currentBundleName != null -> 4 to progress.currentBundleName

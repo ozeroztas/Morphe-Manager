@@ -44,9 +44,9 @@
         <item quantity="one">%s ilova yangilanishga tayyor</item>
         <item quantity="other">%s ta ilova yangilanishga tayyor</item>
     </plurals>
-    <plurals name="batch_patch_notification_ready">
-        <item quantity="one">%s ilova o‘rnatishga tayyor</item>
-        <item quantity="other">%s ta ilova o‘rnatishga tayyor</item>
+    <plurals name="repatch_available_count">
+        <item quantity="one">%s ta ilova qayta yamoqlanishi mumkin</item>
+        <item quantity="other">%s ta ilova qayta yamoqlanishi mumkin</item>
     </plurals>
     <plurals name="batch_skipped_summary">
         <item quantity="one">%s ilova o‘tkazib yuborildi</item>
@@ -59,10 +59,6 @@
     <plurals name="sources_management_subtitle">
         <item quantity="one">%s manba oʻrnatildi</item>
         <item quantity="other">%s manbalar oʻrnatildi</item>
-    </plurals>
-    <plurals name="patch_selection_total_patches">
-        <item quantity="one">%s ta tuzatish tanlandi</item>
-        <item quantity="other">%s ta tuzatishlar tanlandi</item>
     </plurals>
     <plurals name="home_app_show_hidden_count">
         <item quantity="one">%s ta yashirin ilova</item>

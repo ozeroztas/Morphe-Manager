@@ -10,6 +10,21 @@
         <item quantity="few">%s opțiuni de patch</item>
         <item quantity="other">%s de opțiuni de patch</item>
     </plurals>
+    <plurals name="home_app_patch_sources_title">
+        <item quantity="one">Surse de patch pentru %s aplicație</item>
+        <item quantity="few">Surse de patch pentru %s aplicații</item>
+        <item quantity="other">Surse de patch pentru %s de aplicații</item>
+    </plurals>
+    <plurals name="expert_mode_hidden_sources_notice">
+        <item quantity="one">%s sursă ascunsă. Atingeți pentru a afișa</item>
+        <item quantity="few">%s surse ascunse. Atingeți pentru a afișa</item>
+        <item quantity="other">%s de surse ascunse. Atingeți pentru a afișa</item>
+    </plurals>
+    <plurals name="sources_search_patch_matches">
+        <item quantity="one">%s patch potrivit</item>
+        <item quantity="few">%s patch-uri potrivite</item>
+        <item quantity="other">%s de patch-uri potrivite</item>
+    </plurals>
     <plurals name="source_count">
         <item quantity="one">%s sursă</item>
         <item quantity="few">%s surse</item>
@@ -55,10 +70,10 @@
         <item quantity="few">%s aplicaţii gata de patch</item>
         <item quantity="other">%s de aplicaţii gata de patch</item>
     </plurals>
-    <plurals name="batch_patch_notification_ready">
-        <item quantity="one">%s aplicaţie este gata de instalare</item>
-        <item quantity="few">%s aplicaţii sunt gata de instalare</item>
-        <item quantity="other">%s de aplicaţii sunt gata de instalare</item>
+    <plurals name="repatch_available_count">
+        <item quantity="one">%s aplicație poate fi re-patchuită</item>
+        <item quantity="few">%s aplicații pot fi re-patchuite</item>
+        <item quantity="other">%s de aplicații pot fi re-patchuite</item>
     </plurals>
     <plurals name="batch_skipped_summary">
         <item quantity="one">A omis %s aplicaţie</item>
@@ -75,11 +90,6 @@
         <item quantity="few">%s surse instalate</item>
         <item quantity="other">%s de surse instalate</item>
     </plurals>
-    <plurals name="patch_selection_total_patches">
-        <item quantity="one">%s patch selectat</item>
-        <item quantity="few">%s patch-uri selectate</item>
-        <item quantity="other">%s de patch-uri selectate</item>
-    </plurals>
     <plurals name="home_app_show_hidden_count">
         <item quantity="one">%s aplicație ascunsă</item>
         <item quantity="few">%s aplicații ascunse</item>
@@ -90,9 +100,19 @@
         <item quantity="few">%s aplicații</item>
         <item quantity="other">%s aplicații</item>
     </plurals>
+    <plurals name="expert_mode_selected_count">
+        <item quantity="one">%s selectat</item>
+        <item quantity="few">%s selectate</item>
+        <item quantity="other">%s selectate</item>
+    </plurals>
     <plurals name="expert_mode_copy_from_bundle_done">
         <item quantity="one">Patch %s copiat din pachetul selectat</item>
         <item quantity="few">Patch-uri %s copiate din pachetul selectat</item>
         <item quantity="other">Patch-uri %s copiate din pachetul selectat</item>
+    </plurals>
+    <plurals name="core_count">
+        <item quantity="one">%s nucleu</item>
+        <item quantity="few">%s nuclee</item>
+        <item quantity="other">%s de nuclee</item>
     </plurals>
 </resources>

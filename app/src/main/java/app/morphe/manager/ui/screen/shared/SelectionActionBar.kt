@@ -25,7 +25,26 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.morphe.manager.R
 import app.morphe.manager.ui.theme.MonochromeThemeDefaults
-import app.morphe.manager.util.toast
+import app.morphe.manager.util.withToast
+
+/**
+ * Metrics of the [MultiSelectShell] surface. The bar floats over the content it belongs to, so
+ * layouts underneath have to keep that content clear of it; the values they pad by live here
+ * rather than being restated at each call site, where nothing would keep them in step.
+ */
+object MultiSelectBarDefaults {
+    /** Padding the shell keeps above and below its surface. */
+    val SurfacePadding = 8.dp
+
+    /** Height of a bar carrying a counter line and one row of pills. */
+    val Height = 100.dp
+
+    /** Bottom padding a scrolling list needs for its last item to clear the bar. */
+    val ListClearance = Height - SurfacePadding
+
+    /** Clearance for floating controls, which keep a little more air between them and the bar. */
+    val ControlClearance = 96.dp
+}
 
 /**
  * Slide-up surface used to host a multi-select action row. Keeps the surface, elevation
@@ -47,7 +66,7 @@ fun MultiSelectShell(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
+                .padding(vertical = MultiSelectBarDefaults.SurfacePadding),
             shape = RoundedCornerShape(16.dp),
             color = MonochromeThemeDefaults.surfaceColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shadowElevation = 8.dp,
@@ -92,10 +111,6 @@ fun SelectionActionBar(
     actions: @Composable () -> Unit = {}
 ) {
     val context = LocalContext.current
-    fun withToast(doneMessage: String, action: () -> Unit): () -> Unit = {
-        context.toast(doneMessage)
-        action()
-    }
 
     val selectAllLabel = stringResource(R.string.select_all)
     val selectAllDone = stringResource(R.string.select_all_done)
@@ -141,7 +156,7 @@ fun SelectionActionBar(
 
         ActionPillRow {
             ActionPillButton(
-                onClick = withToast(selectionToggleDone) {
+                onClick = context.withToast(selectionToggleDone) {
                     if (canToggleToDeselect) onDeselectAll() else onSelectAll()
                 },
                 icon = if (canToggleToDeselect) Icons.Outlined.RemoveDone else Icons.Outlined.DoneAll,

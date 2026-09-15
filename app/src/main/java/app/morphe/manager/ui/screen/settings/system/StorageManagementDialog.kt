@@ -44,7 +44,7 @@ fun StorageManagementDialog(
 
     val onCleared: (Long) -> Unit = { freed ->
         val message = if (freed <= 0L) nothingToClearText
-        else clearedTemplate.format(formatBytes(freed))
+        else clearedTemplate.format(context.formatBytes(freed))
         context.toast(message)
     }
 
@@ -81,7 +81,7 @@ fun StorageManagementDialog(
         title = stringResource(R.string.settings_system_storage_management_title),
         padding = DialogPadding.Compact,
         titleTrailingContent = {
-            DialogTitleAction(
+            TitleAction(
                 icon = Icons.Outlined.Refresh,
                 contentDescription = stringResource(R.string.refresh),
                 onClick = {
@@ -234,7 +234,7 @@ private fun CacheActionRow(
             actions = listOf(
                 CardAction(
                     icon = Icons.Outlined.DeleteSweep,
-                    label = "${stringResource(R.string.clear)} (${formatBytes(bytes)})",
+                    label = "${stringResource(R.string.clear)} (${LocalContext.current.formatBytes(bytes)})",
                     onClick = onClear,
                     enabled = bytes > 0L,
                     destructive = true
@@ -255,7 +255,7 @@ private fun ClearCachesConfirmationDialog(
         title = stringResource(R.string.settings_system_storage_clear_all),
         footer = {
             AppDialogButtonRow(
-                primaryText = stringResource(R.string.settings_system_storage_clear_all),
+                primaryText = stringResource(R.string.clear),
                 onPrimaryClick = onConfirm,
                 isPrimaryDestructive = true,
                 secondaryText = stringResource(android.R.string.cancel),
@@ -273,7 +273,7 @@ private fun ClearCachesConfirmationDialog(
             )
 
             LabeledSection(
-                version = stringResource(R.string.settings_system_apks_size, formatBytes(totalBytes))
+                version = stringResource(R.string.settings_system_apks_size, LocalContext.current.formatBytes(totalBytes))
             ) {
                 DeleteListItem(
                     icon = Icons.Outlined.CloudDownload,

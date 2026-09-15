@@ -9,7 +9,6 @@ import androidx.appcompat.content.res.AppCompatResources
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -56,11 +55,14 @@ import app.morphe.manager.R
 import app.morphe.manager.domain.bundles.*
 import app.morphe.manager.domain.bundles.PatchBundleSource.Extensions.avatarUrls
 import app.morphe.manager.domain.bundles.PatchBundleSource.Extensions.isDefault
+import app.morphe.manager.domain.bundles.PatchBundleSource.Extensions.isHeldBack
 import app.morphe.manager.domain.bundles.PatchBundleSource.Extensions.sourceType
+import app.morphe.manager.domain.bundles.PatchBundleSource.Extensions.usesPrerelease
 import app.morphe.manager.domain.manager.PreferencesManager
 import app.morphe.manager.domain.manager.SourceBundleSortMode
 import app.morphe.manager.domain.repository.BlocklistRepository
 import app.morphe.manager.domain.repository.PatchBundleRepository
+import app.morphe.manager.domain.repository.SourceMuteRepository
 import app.morphe.manager.ui.screen.patcher.IncompatiblePatcherVersionDialog
 import app.morphe.manager.ui.screen.shared.*
 import app.morphe.manager.util.*
@@ -73,6 +75,9 @@ import java.util.Locale
 
 /** Keeps the scrollbar clear of the sheet's bottom action row. */
 private val SourceListScrollbarBottomInset = 64.dp
+
+/** Enough placeholder rows to fill the sheet on open without implying a count. */
+private val SourceShimmerRows = (0 until 4).toList()
 
 /**
  * Bottom sheet for managing patch bundles.
@@ -91,21 +96,33 @@ fun BundleManagementSheet(
 ) {
     val patchBundleRepository: PatchBundleRepository = koinInject()
     val prefs: PreferencesManager = koinInject()
+    val sourceMuteRepository: SourceMuteRepository = koinInject()
     val scope = rememberCoroutineScope()
 
-    val sources by patchBundleRepository.sources.collectAsStateWithLifecycle(emptyList())
+    val sources by patchBundleRepository.sources.collectAsStateWithLifecycle()
+    val bundleState by patchBundleRepository.bundleState.collectAsStateWithLifecycle()
+    val isLoadingSources = bundleState is PatchBundleRepository.BundleState.Loading
     val patchCounts by patchBundleRepository.patchCountsFlow.collectAsStateWithLifecycle(emptyMap())
     val manualUpdateInfo by patchBundleRepository.manualUpdateInfo.collectAsStateWithLifecycle(emptyMap())
     val activeUpdateUids by patchBundleRepository.activeUpdateUidsFlow.collectAsStateWithLifecycle(emptySet())
     val metadataFetchErrors by patchBundleRepository.metadataFetchErrors.collectAsStateWithLifecycle(emptyMap())
     val experimentalVersionsEnabled by prefs.bundleExperimentalVersionsEnabled.getAsState()
-    val bundleInfo by patchBundleRepository.bundleInfoFlow.collectAsStateWithLifecycle(emptyMap())
+    // Every source, not only the enabled ones: a disabled source still answers a patch search
+    // and still declares whether it carries experimental targets
+    val bundleInfo by patchBundleRepository.allBundlesInfoFlow.collectAsStateWithLifecycle(emptyMap())
     val blockedSources by patchBundleRepository.blockedSources.collectAsStateWithLifecycle(emptyMap())
+    val hiddenApps by sourceMuteRepository.mutedApps.collectAsStateWithLifecycle(emptyMap())
 
     val showSheetOnboarding = globalOnboardingState?.sheetOnboardingActive == true
 
     val bundleToDelete = remember { mutableStateOf<PatchBundleSource?>(null) }
+    // Set when the user flips pre-releases on: the toggle waits for confirmation first,
+    // so the meaning of unstable testing builds is explained before anything changes
+    val bundleToConfirmPrerelease = remember { mutableStateOf<PatchBundleSource?>(null) }
     var showSortDialog by remember { mutableStateOf(false) }
+    // Search is offered from two sources up
+    val isSearchable = sources.size >= 2
+    val search = rememberSearchFieldState(searchable = isSearchable)
     // Expanded state lifted out of LazyColumn so it survives scroll-off-screen recomposition
     var expandedBundleUids by remember { mutableStateOf<Set<Int>>(emptySet()) }
 
@@ -140,13 +157,42 @@ fun BundleManagementSheet(
     val orderedSources = remember(localOrder, sources, sourceSortMode) {
         sources.sortedForSourceSort(sourceSortMode, localOrder)
     }
-    val alphabetScrollMode = sourceSortMode == SourceBundleSortMode.NAME_ASC ||
-            sourceSortMode == SourceBundleSortMode.NAME_DESC
-    val sourceScrollTargets = remember(alphabetScrollMode, orderedSources) {
+    // Patches are searched alongside source names, so one query answers which source carries a
+    // patch instead of the user opening every source to find out. Blocked sources stay out of it,
+    // since nothing they hold is reachable anyway
+    val patchMatchCounts: Map<Int, Int> = remember(bundleInfo, blockedSources, search.query) {
+        val query = search.query.takeIf { it.isNotBlank() } ?: return@remember emptyMap()
+        buildMap {
+            bundleInfo.forEach { (uid, info) ->
+                if (uid in blockedSources) return@forEach
+                val matches = info.patches.count { it.matchesQuery(query) }
+                if (matches > 0) put(uid, matches)
+            }
+        }
+    }
+    val visibleSources = remember(orderedSources, patchMatchCounts, search.query) {
+        val query = search.query
+        if (query.isBlank()) return@remember orderedSources
+        orderedSources
+            .filter { source -> source.matchesQuery(query) || source.uid in patchMatchCounts }
+            // A source the query names is the one that was asked for; the rest rank by how much
+            // of the query they carry. The sort is stable, so ties keep the order the sort mode
+            // gave them, and clearing the query drops back to that order untouched
+            .sortedWith(
+                compareByDescending<PatchBundleSource> { it.matchesQuery(query) }
+                    .thenByDescending { patchMatchCounts[it.uid] ?: 0 }
+            )
+    }
+    // The alphabet rail reads positions off a list that is in name order, which a search ranking
+    // results by relevance no longer is
+    val alphabetScrollMode = !search.isFiltering &&
+            (sourceSortMode == SourceBundleSortMode.NAME_ASC ||
+                    sourceSortMode == SourceBundleSortMode.NAME_DESC)
+    val sourceScrollTargets = remember(alphabetScrollMode, visibleSources) {
         if (!alphabetScrollMode) {
             emptyList()
         } else {
-            buildIndexedScrollTargets(orderedSources) { source -> source.displayTitle }
+            buildIndexedScrollTargets(visibleSources) { source -> source.displayTitle }
         }
     }
     val haptic = LocalHapticFeedback.current
@@ -158,14 +204,20 @@ fun BundleManagementSheet(
     }
 
     val bundleToShowPatches = remember { mutableStateOf<PatchBundleSource?>(null) }
+    val bundleToShowHiddenApps = remember { mutableStateOf<PatchBundleSource?>(null) }
     var bundleRequiringManagerUpdate by remember { mutableStateOf<PatchBundleSource?>(null) }
     var bundleToShowChangelogUid by remember { mutableStateOf<Int?>(null) }
-    val bundleToShowChangelog = bundleToShowChangelogUid
-        ?.let { uid -> sources.filterIsInstance<RemotePatchBundle>().find { it.uid == uid } }
-    val bundleToShowChangelogKey = bundleToShowChangelog?.let {
-        val usePrerelease = (it as? APIPatchBundle)?.usePrerelease == true
-                || (it as? JsonPatchBundle)?.usePrerelease == true
-        "${it.installedVersionSignature}|$usePrerelease"
+
+    // Switching branches invalidates whatever the changelog dialog is holding, so the cache goes
+    // and an open dialog closes rather than keeping entries from the branch that was just left
+    fun applyPrerelease(bundle: PatchBundleSource, usePrerelease: Boolean) {
+        if (bundle.uid == bundleToShowChangelogUid) {
+            bundleToShowChangelogUid = null
+        }
+        (bundle as? RemotePatchBundle)?.clearChangelogCache()
+        scope.launch {
+            patchBundleRepository.setUsePrerelease(bundle.uid, usePrerelease)
+        }
     }
 
     // Check if only default bundle exists
@@ -185,6 +237,9 @@ fun BundleManagementSheet(
         val context = LocalContext.current
         val uriHandler = LocalUriHandler.current
         val failedToOpenUrlText = stringResource(R.string.sources_management_failed_to_open_url)
+
+        // Registered inside the sheet content so it outranks the sheet's own dismiss handler
+        SearchFieldBackHandler(search)
 
         Box {
             Column(Modifier.fillMaxWidth()) {
@@ -207,7 +262,7 @@ fun BundleManagementSheet(
                                 text = pluralStringResource(
                                     R.plurals.sources_management_subtitle,
                                     sources.size,
-                                    sources.size
+                                    sources.size.toString()
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -215,39 +270,58 @@ fun BundleManagementSheet(
                         }
 
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(Defaults.ContentPaddingSmall),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AnimatedVisibility(visible = sources.size >= 2) {
-                                val activeSortLabel = stringResource(sourceSortMode.labelRes)
-                                FilledIconButton(
-                                    onClick = { showSortDialog = true },
-                                    modifier = Modifier.semantics {
-                                        role = Role.Button
-                                        stateDescription = activeSortLabel
-                                    },
-                                    colors = IconButtonDefaults.filledIconButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                                    )
+                            AnimatedVisibility(visible = isSearchable) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(Defaults.ContentPaddingSmall),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Outlined.Sort,
-                                        contentDescription = stringResource(R.string.sort)
+                                    TitleAction(
+                                        icon = if (search.visible) Icons.Outlined.SearchOff else Icons.Outlined.Search,
+                                        contentDescription = stringResource(R.string.search),
+                                        onClick = { search.toggle() },
+                                        style = TitleActionStyle.AccentToggle,
+                                        active = search.visible
+                                    )
+
+                                    val activeSortLabel = stringResource(sourceSortMode.labelRes)
+                                    TitleAction(
+                                        icon = Icons.AutoMirrored.Outlined.Sort,
+                                        contentDescription = stringResource(R.string.sort),
+                                        onClick = { showSortDialog = true },
+                                        modifier = Modifier.semantics {
+                                            role = Role.Button
+                                            stateDescription = activeSortLabel
+                                        },
+                                        style = TitleActionStyle.Accent
                                     )
                                 }
                             }
-                            FilledIconButton(
+                            TitleAction(
+                                icon = Icons.Default.Add,
+                                contentDescription = stringResource(R.string.add),
                                 onClick = onAddSource,
-                                colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                                )
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = stringResource(R.string.add)
-                                )
-                            }
+                                style = TitleActionStyle.Accent
+                            )
                         }
+                    }
+
+                    AnimatedVisibility(
+                        visible = search.visible,
+                        enter = Animations.expandFadeEnter,
+                        exit = Animations.shrinkFadeExit
+                    ) {
+                        HomeSearchTextField(
+                            value = search.query,
+                            onValueChange = { search.query = it },
+                            label = stringResource(R.string.sources_search),
+                            requestFocus = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                        )
                     }
 
                     Spacer(Modifier.height(8.dp))
@@ -272,7 +346,22 @@ fun BundleManagementSheet(
                             bottom = 16.dp
                         )
                     ) {
-                        items(orderedSources, key = { bundle -> bundle.uid }) { bundle ->
+                        if (isLoadingSources) {
+                            items(SourceShimmerRows, key = { index -> "shimmer_$index" }) {
+                                ShimmerBundleRow()
+                            }
+                        }
+
+                        if (search.isFiltering && visibleSources.isEmpty()) {
+                            item(key = "search_empty") {
+                                EmptyState(
+                                    message = stringResource(R.string.search_no_results),
+                                    icon = Icons.Outlined.SearchOff
+                                )
+                            }
+                        }
+
+                        items(visibleSources, key = { bundle -> bundle.uid }) { bundle ->
                             val hasExperimentalVersions = remember(bundle.uid, bundleInfo) {
                                 bundleInfo[bundle.uid]?.patches?.any { patch ->
                                     patch.compatiblePackages?.any { pkg ->
@@ -282,11 +371,23 @@ fun BundleManagementSheet(
                             }
                             val useExperimentalVersions = bundle.uid.toString() in experimentalVersionsEnabled
 
-                            val isFirstCard = bundle.uid == orderedSources.firstOrNull()?.uid
-                            ReorderableItem(reorderableState, key = bundle.uid) { itemIsDragging ->
+                            val isFirstCard = bundle.uid == visibleSources.firstOrNull()?.uid
+                            ReorderableItem(
+                                reorderableState,
+                                key = bundle.uid,
+                                // Only wanted while dragging: elsewhere it lags behind a card growing
+                                // on expand, letting it overlap the one below
+                                animateItemModifier = if (isDragging) {
+                                    Modifier.animateItem()
+                                } else {
+                                    Modifier.animateItem(placementSpec = null)
+                                }
+                            ) { itemIsDragging ->
                                 BundleManagementCard(
                                     bundle = bundle,
                                     patchCount = patchCounts[bundle.uid] ?: 0,
+                                    patchMatchCount = patchMatchCounts[bundle.uid],
+                                    hiddenAppCount = hiddenApps[bundle.uid]?.size ?: 0,
                                     updateInfo = manualUpdateInfo[bundle.uid],
                                     isUpdating = bundle.uid in activeUpdateUids,
                                     metadataFetchError = metadataFetchErrors[bundle.uid],
@@ -307,15 +408,11 @@ fun BundleManagementSheet(
                                     onPrereleasesToggle = when {
                                         bundle is JsonPatchBundle && bundle.supportsPrerelease ||
                                                 bundle is APIPatchBundle -> { usePrerelease ->
-                                            if (bundle.uid == bundleToShowChangelogUid) {
-                                                bundleToShowChangelogUid = null
-                                            }
-                                            bundle.clearChangelogCache()
-                                            scope.launch {
-                                                patchBundleRepository.setUsePrerelease(
-                                                    bundle.uid,
-                                                    usePrerelease
-                                                )
+                                            if (usePrerelease) {
+                                                // Explain what pre-release means before flipping it on
+                                                bundleToConfirmPrerelease.value = bundle
+                                            } else {
+                                                applyPrerelease(bundle, false)
                                             }
                                         }
 
@@ -334,6 +431,7 @@ fun BundleManagementSheet(
                                     hasExperimentalVersions = hasExperimentalVersions,
                                     useExperimentalVersions = useExperimentalVersions,
                                     onPatchesClick = { bundleToShowPatches.value = bundle },
+                                    onHiddenAppsClick = { bundleToShowHiddenApps.value = bundle },
                                     onOutdatedManagerClick = { bundleRequiringManagerUpdate = bundle },
                                     onVersionClick = {
                                         if (bundle is RemotePatchBundle) {
@@ -350,9 +448,20 @@ fun BundleManagementSheet(
                                             context.toast(failedToOpenUrlText)
                                         }
                                     },
+                                    onReportIssue = {
+                                        val issuesUrl = (bundle as? RemotePatchBundle)?.issuesPageUrl
+                                            ?: SOURCE_REPO_URL
+                                        try {
+                                            uriHandler.openUri(issuesUrl)
+                                        } catch (_: Exception) {
+                                            context.toast(failedToOpenUrlText)
+                                        }
+                                    },
                                     forceExpanded = isSingleDefaultBundle,
                                     isDragging = itemIsDragging,
-                                    longPressModifier = if (isManualSort) {
+                                    // Reorder maps list positions onto the full order, so a
+                                    // filtered list would move the wrong sources
+                                    longPressModifier = if (isManualSort && !search.isFiltering) {
                                         Modifier.longPressDraggableHandle(
                                             onDragStarted = {
                                                 isDragging = true
@@ -418,11 +527,34 @@ fun BundleManagementSheet(
         )
     }
 
+    // Pre-release enable confirmation dialog
+    bundleToConfirmPrerelease.value?.let { bundle ->
+        ConfirmDialog(
+            title = stringResource(R.string.sources_prerelease_warning_title),
+            message = stringResource(R.string.sources_prerelease_warning_message),
+            primaryText = stringResource(R.string.enable),
+            isPrimaryDestructive = false,
+            onDismiss = { bundleToConfirmPrerelease.value = null },
+            onConfirm = {
+                bundleToConfirmPrerelease.value = null
+                applyPrerelease(bundle, true)
+            }
+        )
+    }
+
     // Patches dialog
     if (bundleToShowPatches.value != null) {
         BundlePatchesDialog(
             onDismissRequest = { bundleToShowPatches.value = null },
-            src = bundleToShowPatches.value!!
+            src = bundleToShowPatches.value!!,
+            initialQuery = search.query
+        )
+    }
+
+    bundleToShowHiddenApps.value?.let { src ->
+        BundleHiddenAppsDialog(
+            onDismissRequest = { bundleToShowHiddenApps.value = null },
+            src = src
         )
     }
 
@@ -436,14 +568,11 @@ fun BundleManagementSheet(
     }
 
     // Changelog dialog
-    if (bundleToShowChangelog != null) {
-        key(bundleToShowChangelogKey) {
-            BundleChangelogDialog(
-                src = bundleToShowChangelog,
-                onDismissRequest = { bundleToShowChangelogUid = null }
-            )
-        }
-    }
+    BundleChangelogHost(
+        request = bundleToShowChangelogUid?.let { BundleChangelogRequest(it) },
+        sources = sources,
+        onDismissRequest = { bundleToShowChangelogUid = null }
+    )
 }
 
 private fun List<PatchBundleSource>.sortedForSourceSort(
@@ -483,14 +612,23 @@ private fun List<PatchBundleSource>.sortedForSourceSort(
 private fun PatchBundleSource.sourceSortTitle(): String =
     displayTitle.lowercase(Locale.ROOT)
 
+/** Whether the source's own name answers to a search query, before its patches are consulted. */
+private fun PatchBundleSource.matchesQuery(query: String): Boolean =
+    displayTitle.contains(query, ignoreCase = true) || name.contains(query, ignoreCase = true)
+
 /**
  * Card for individual bundle management.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BundleManagementCard(
     bundle: PatchBundleSource,
     modifier: Modifier = Modifier,
     patchCount: Int,
+    /** Patches in this source matching the sheet's search, or null while nothing is searched. */
+    patchMatchCount: Int? = null,
+    /** Apps kept from this source. Zero drops the row, since there is nothing to take back. */
+    hiddenAppCount: Int = 0,
     updateInfo: PatchBundleRepository.ManualBundleUpdateInfo?,
     isUpdating: Boolean = false,
     isDragging: Boolean = false,
@@ -511,8 +649,10 @@ private fun BundleManagementCard(
     hasExperimentalVersions: Boolean,
     useExperimentalVersions: Boolean,
     onPatchesClick: () -> Unit,
+    onHiddenAppsClick: () -> Unit = {},
     onVersionClick: () -> Unit,
     onOpenInBrowser: () -> Unit,
+    onReportIssue: () -> Unit,
     onOutdatedManagerClick: () -> Unit,
     forceExpanded: Boolean = false
 ) {
@@ -522,26 +662,22 @@ private fun BundleManagementCard(
     val enabledState = stringResource(R.string.enabled)
     val disabledState = stringResource(R.string.disabled)
     val openInBrowser = stringResource(R.string.sources_management_open_in_browser)
+    val reportIssue = stringResource(R.string.sources_management_report_issue)
+    val patchesLabel = stringResource(R.string.patches)
 
     val context = LocalContext.current
-    fun withToast(doneMessage: String, action: () -> Unit): () -> Unit = {
-        context.toast(doneMessage)
-        action()
-    }
 
     val isBlocked = blockedInfo != null
     val isEnabled = bundle.enabled && !isBlocked
     val hasMetadataError = metadataFetchError != null
     val isMissing = bundle.state is PatchBundleSource.State.Missing
 
-    val animatedColor by animateColorAsState(
-        targetValue = when {
-            !isEnabled -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
-            hasMetadataError || isMissing -> Color(0xFFFFF8E1).copy(alpha = 0.15f)
-            else -> MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)
-        },
-        label = "bundle_card_color"
-    )
+    val cardColor = when {
+        !isEnabled -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
+        hasMetadataError || isMissing -> Color(0xFFFFF8E1).copy(alpha = 0.15f)
+        else -> MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)
+    }
+    val animatedColor by animateColorAsState(cardColor, label = "bundle_card_color")
 
     val animatedBorderColor by animateColorAsState(
         targetValue = when {
@@ -558,6 +694,10 @@ private fun BundleManagementCard(
         label = "bundle_card_scale"
     )
 
+    // Taken from where the card is heading rather than where it is, so anything resolved against
+    // it animates to a fixed target instead of chasing one that moves every frame
+    val cardBackground = cardColor.compositeOver(MaterialTheme.colorScheme.surfaceContainerHigh)
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -567,296 +707,370 @@ private fun BundleManagementCard(
         color = animatedColor,
         border = BorderStroke(1.dp, animatedBorderColor)
     ) {
-        // Build content description
-        val updateLabel = stringResource(R.string.update)
-        val availableLabel = stringResource(R.string.available)
-        val contentDesc = remember(bundle.displayTitle, isEnabled, expanded, forceExpanded, updateInfo) {
-            buildString {
-                append(bundle.displayTitle)
-                append(", ")
-                if (isEnabled) {
-                    append(enabledState)
-                } else {
-                    append(disabledState)
-                }
-                if (!forceExpanded) {
+        CompositionLocalProvider(LocalCardBackground provides cardBackground) {
+            // Build content description
+            val updateLabel = stringResource(R.string.update)
+            val availableLabel = stringResource(R.string.available)
+            val contentDesc = remember(bundle.displayTitle, isEnabled, expanded, forceExpanded, updateInfo) {
+                buildString {
+                    append(bundle.displayTitle)
                     append(", ")
-                    append(if (expanded) expandedState else collapsedState)
-                }
-                updateInfo?.let {
-                    append(", ")
-                    append(updateLabel)
-                    append(" ")
-                    append(availableLabel)
+                    if (isEnabled) {
+                        append(enabledState)
+                    } else {
+                        append(disabledState)
+                    }
+                    if (!forceExpanded) {
+                        append(", ")
+                        append(if (expanded) expandedState else collapsedState)
+                    }
+                    updateInfo?.let {
+                        append(", ")
+                        append(updateLabel)
+                        append(" ")
+                        append(availableLabel)
+                    }
                 }
             }
-        }
 
-        Column(modifier = Modifier.padding(Defaults.ContentPadding)) {
-            // Click target only on the header so expanded children stay independently focusable for screen readers
-            BundleCardHeader(
-                bundle = bundle,
-                updateInfo = updateInfo,
-                expanded = expanded,
-                showChevron = !forceExpanded,
-                enabled = isEnabled,
-                metadataFetchError = metadataFetchError,
-                blockedInfo = blockedInfo,
-                modifier = longPressModifier
-                    .clickable(
-                        indication = null,
-                        interactionSource = remember { MutableInteractionSource() }
-                    ) {
-                        if (!forceExpanded) onToggleExpanded()
-                    }
-                    .semantics(mergeDescendants = true) {
-                        if (!forceExpanded) {
-                            role = Role.Button
-                            stateDescription = if (expanded) expandedState else collapsedState
-                        }
-                        this.contentDescription = contentDesc
-                    }
-            )
-
-            // Expanded content
-            AnimatedVisibility(
-                visible = expanded,
-                enter = Animations.expandVertEnter,
-                exit = Animations.shrinkVertExit
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(Defaults.ContentPaddingSmall)
-                ) {
-                    Column {
-                        // Blocked source banner (shown when the source appears on the remote blocklist)
-                        AnimatedVisibility(
-                            visible = blockedInfo != null,
-                            enter = Animations.expandFadeEnter,
-                            exit = Animations.shrinkFadeExit
+            Column(modifier = Modifier.padding(Defaults.ContentPadding)) {
+                // Click target only on the header so expanded children stay independently focusable for screen readers
+                BundleCardHeader(
+                    bundle = bundle,
+                    updateInfo = updateInfo,
+                    expanded = expanded,
+                    showChevron = !forceExpanded,
+                    enabled = isEnabled,
+                    metadataFetchError = metadataFetchError,
+                    blockedInfo = blockedInfo,
+                    patchMatchCount = patchMatchCount,
+                    onShowPatchMatches = onPatchesClick,
+                    modifier = longPressModifier
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
                         ) {
-                            val label = stringResource(R.string.sources_management_source_blocked_badge)
-                            val reason = blockedInfo?.reason?.trim()?.takeIf { it.isNotEmpty() }
-                                ?.replaceFirstChar { it.uppercaseChar() }
-                            Notice(
-                                text = if (reason != null) "$label: $reason" else label,
-                                icon = Icons.Outlined.Block,
-                                tone = SemanticTone.Error,
-                                density = NoticeDensity.Compact
-                            )
+                            if (!forceExpanded) onToggleExpanded()
                         }
-
-                        // Metadata unavailable hint (shown when patches-bundle.json / remote fetch failed)
-                        AnimatedVisibility(
-                            visible = metadataFetchError != null || bundle.state is PatchBundleSource.State.Missing,
-                            enter = Animations.expandFadeEnter,
-                            exit = Animations.shrinkFadeExit
-                        ) {
-                            val hintText = if (bundle.state is PatchBundleSource.State.Missing) {
-                                stringResource(R.string.sources_management_metadata_unavailable_hint_missing)
-                            } else {
-                                stringResource(R.string.sources_management_metadata_unavailable_hint)
+                        .semantics(mergeDescendants = true) {
+                            if (!forceExpanded) {
+                                role = Role.Button
+                                stateDescription = if (expanded) expandedState else collapsedState
                             }
-                            Notice(
-                                text = hintText,
-                                icon = Icons.Outlined.CloudOff,
-                                tone = SemanticTone.Error,
-                                density = NoticeDensity.Compact
+                            this.contentDescription = contentDesc
+                            // The match badge is a tap target the merged node swallows otherwise
+                            if (patchMatchCount != null) {
+                                customActions = listOf(
+                                    CustomAccessibilityAction(patchesLabel) { onPatchesClick(); true }
+                                )
+                            }
+                        }
+                )
+
+                // Expanded content
+                AnimatedVisibility(
+                    visible = expanded,
+                    enter = Animations.expandVertEnter,
+                    exit = Animations.shrinkVertExit
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(Defaults.ContentPaddingSmall)
+                    ) {
+                        Column {
+                            // Blocked source banner (shown when the source appears on the remote blocklist)
+                            AnimatedVisibility(
+                                visible = blockedInfo != null,
+                                enter = Animations.expandFadeEnter,
+                                exit = Animations.shrinkFadeExit
+                            ) {
+                                val label = stringResource(R.string.sources_management_source_blocked_badge)
+                                val reason = blockedInfo?.reason?.trim()?.takeIf { it.isNotEmpty() }
+                                    ?.replaceFirstChar { it.uppercaseChar() }
+                                Notice(
+                                    text = if (reason != null) "$label: $reason" else label,
+                                    icon = Icons.Outlined.Block,
+                                    tone = SemanticTone.Error,
+                                    density = NoticeDensity.Compact
+                                )
+                            }
+
+                            // Metadata unavailable hint (shown when patches-bundle.json / remote fetch failed)
+                            AnimatedVisibility(
+                                visible = metadataFetchError != null || bundle.state is PatchBundleSource.State.Missing,
+                                enter = Animations.expandFadeEnter,
+                                exit = Animations.shrinkFadeExit
+                            ) {
+                                val hintText = if (bundle.state is PatchBundleSource.State.Missing) {
+                                    stringResource(R.string.sources_management_metadata_unavailable_hint_missing)
+                                } else {
+                                    stringResource(R.string.sources_management_metadata_unavailable_hint)
+                                }
+                                Notice(
+                                    text = hintText,
+                                    icon = Icons.Outlined.CloudOff,
+                                    tone = SemanticTone.Error,
+                                    density = NoticeDensity.Compact
+                                )
+                            }
+
+                            // Held back hint (shown when reading the source killed the process)
+                            AnimatedVisibility(
+                                visible = bundle.isHeldBack,
+                                enter = Animations.expandFadeEnter,
+                                exit = Animations.shrinkFadeExit
+                            ) {
+                                Notice(
+                                    text = stringResource(R.string.sources_management_held_back_hint),
+                                    icon = Icons.Outlined.ErrorOutline,
+                                    tone = SemanticTone.Error,
+                                    density = NoticeDensity.Compact
+                                )
+                            }
+
+                            // Outdated manager hint
+                            AnimatedVisibility(
+                                visible = bundle.requiresManagerUpdate,
+                                enter = Animations.expandFadeEnter,
+                                exit = Animations.shrinkFadeExit
+                            ) {
+                                Notice(
+                                    modifier = Modifier.clickable(onClick = onOutdatedManagerClick),
+                                    text = stringResource(
+                                        R.string.sources_management_outdated_manager_hint,
+                                        bundle.requiredPatcherVersion.orEmpty(),
+                                        BuildConfig.VERSION_NAME,
+                                        BuildConfig.PATCHER_VERSION
+                                    ),
+                                    icon = Icons.Outlined.SystemUpdate,
+                                    tone = SemanticTone.Error,
+                                    density = NoticeDensity.Compact
+                                )
+                            }
+                        }
+
+                        // Patches
+                        BundleInfoCard(
+                            modifier = Modifier.fillMaxWidth().then(
+                                if (onPatchesBtnPositioned != null)
+                                    Modifier.onGloballyPositioned { coords ->
+                                        onPatchesBtnPositioned(coords.boundsInWindow())
+                                    }
+                                else Modifier
+                            ),
+                            icon = Icons.Outlined.Info,
+                            title = stringResource(R.string.patches),
+                            value = if (patchMatchCount != null) {
+                                "$patchMatchCount/$patchCount"
+                            } else {
+                                patchCount.toString()
+                            },
+                            onClick = onPatchesClick,
+                            // A disabled source still lists what it holds, which is what the
+                            // decision to switch it back on is made on. A blocked one does not,
+                            // and neither does one whose patches never loaded
+                            enabled = !isBlocked && !isUpdating && patchCount > 0
+                        )
+
+                        // Version
+                        BundleInfoCard(
+                            modifier = Modifier.fillMaxWidth().then(
+                                if (onVersionPositioned != null)
+                                    Modifier.onGloballyPositioned { coords ->
+                                        onVersionPositioned(coords.boundsInWindow())
+                                    }
+                                else Modifier
+                            ),
+                            icon = Icons.Outlined.Update,
+                            title = stringResource(R.string.version),
+                            value = bundle.version?.removePrefix("v")?.isolateLtr() ?: "N/A",
+                            onClick = onVersionClick,
+                            enabled = !isUpdating
+                        )
+
+                        // Only where something is actually being kept from the source. The row is
+                        // the one way back that does not depend on which mode the user patches in
+                        if (hiddenAppCount > 0) {
+                            BundleInfoCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                icon = Icons.Outlined.VisibilityOff,
+                                title = stringResource(R.string.sources_hidden_apps),
+                                value = pluralStringResource(
+                                    R.plurals.home_category_app_count,
+                                    hiddenAppCount,
+                                    hiddenAppCount.toString()
+                                ),
+                                onClick = onHiddenAppsClick,
+                                enabled = !isUpdating
                             )
                         }
 
-                        // Outdated manager hint
+                        // Both actions leave for the same repository, so they share a row.
+                        // Only the primary one carries a label, keeping it clear of the
+                        // width its own translation happens to need
+                        if (bundle is RemotePatchBundle) {
+                            val issueDesc = reportIssue + " " + bundle.displayTitle
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(Defaults.ContentPaddingSmall)
+                            ) {
+                                FilledTonalButton(
+                                    onClick = onOpenInBrowser,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                        .semantics {
+                                            contentDescription = openInBrowser
+                                        },
+                                    shape = RoundedCornerShape(Defaults.CompactCornerRadius)
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Outlined.OpenInNew,
+                                        contentDescription = null
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(openInBrowser)
+                                }
+
+                                TooltipBox(
+                                    positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+                                        TooltipAnchorPosition.Above
+                                    ),
+                                    tooltip = { PlainTooltip { Text(reportIssue) } },
+                                    state = rememberTooltipState()
+                                ) {
+                                    FilledTonalIconButton(
+                                        onClick = onReportIssue,
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .semantics {
+                                                contentDescription = issueDesc
+                                            },
+                                        shape = RoundedCornerShape(Defaults.CompactCornerRadius)
+                                    ) {
+                                        Icon(
+                                            Icons.Outlined.BugReport,
+                                            contentDescription = null
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        SettingsDivider(fullWidth = true)
+
+                        // Resolve prerelease state once
+                        val currentUsePrerelease = bundle.usesPrerelease
+
+                        // Prerelease toggle (for JsonPatchBundle with GitHub endpoint or APIPatchBundle)
+                        if (onPrereleasesToggle != null) {
+                            ToggleRow(
+                                title = stringResource(R.string.sources_management_prerelease_toggle),
+                                description = stringResource(R.string.sources_management_prerelease_toggle_description),
+                                checked = currentUsePrerelease,
+                                onCheckedChange = onPrereleasesToggle,
+                                enabled = !isUpdating,
+                                isLoading = isUpdating,
+                                showDivider = false,
+                                rowModifier = if (onPrereleaseBtnPositioned != null)
+                                    Modifier.onGloballyPositioned { coords -> onPrereleaseBtnPositioned(coords.boundsInWindow()) }
+                                else Modifier
+                            )
+                        }
+
+                        // Experimental versions toggle - shown for any bundle type that has experimental app version targets.
+                        // For remote bundles (prerelease supported) it additionally requires prereleases to be ON.
                         AnimatedVisibility(
-                            visible = bundle.requiresManagerUpdate,
+                            visible = hasExperimentalVersions && onExperimentalVersionsToggle != null &&
+                                    (onPrereleasesToggle == null || currentUsePrerelease),
                             enter = Animations.expandFadeEnter,
                             exit = Animations.shrinkFadeExit
                         ) {
-                            Notice(
-                                modifier = Modifier.clickable(onClick = onOutdatedManagerClick),
-                                text = stringResource(
-                                    R.string.sources_management_outdated_manager_hint,
-                                    bundle.requiredPatcherVersion.orEmpty(),
-                                    BuildConfig.VERSION_NAME,
-                                    BuildConfig.PATCHER_VERSION
-                                ),
-                                icon = Icons.Outlined.SystemUpdate,
-                                tone = SemanticTone.Error,
-                                density = NoticeDensity.Compact
+                            ToggleRow(
+                                title = stringResource(R.string.sources_management_experimental_versions_toggle),
+                                description = stringResource(R.string.sources_management_experimental_versions_toggle_description),
+                                checked = useExperimentalVersions,
+                                onCheckedChange = { onExperimentalVersionsToggle?.invoke(it) },
+                                showDivider = false
                             )
                         }
-                    }
 
-                    // Patches
-                    BundleInfoCard(
-                        modifier = Modifier.fillMaxWidth().then(
-                            if (onPatchesBtnPositioned != null)
-                                Modifier.onGloballyPositioned { coords ->
-                                    onPatchesBtnPositioned(coords.boundsInWindow())
-                                }
-                            else Modifier
-                        ),
-                        icon = Icons.Outlined.Info,
-                        title = stringResource(R.string.patches),
-                        value = patchCount.toString(),
-                        onClick = onPatchesClick,
-                        enabled = isEnabled && !isUpdating
-                    )
-
-                    // Version
-                    BundleInfoCard(
-                        modifier = Modifier.fillMaxWidth().then(
-                            if (onVersionPositioned != null)
-                                Modifier.onGloballyPositioned { coords ->
-                                    onVersionPositioned(coords.boundsInWindow())
-                                }
-                            else Modifier
-                        ),
-                        icon = Icons.Outlined.Update,
-                        title = stringResource(R.string.version),
-                        value = bundle.version?.removePrefix("v")?.isolateLtr() ?: "N/A",
-                        onClick = onVersionClick,
-                        enabled = !isUpdating
-                    )
-
-                    // Open in browser button
-                    if (bundle is RemotePatchBundle) {
-                        FilledTonalButton(
-                            onClick = onOpenInBrowser,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .semantics {
-                                    contentDescription = openInBrowser
-                                },
-                            shape = RoundedCornerShape(Defaults.CompactCornerRadius)
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Outlined.OpenInNew,
-                                contentDescription = null
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(openInBrowser)
+                        if (onPrereleasesToggle != null || (hasExperimentalVersions && onExperimentalVersionsToggle != null)) {
+                            SettingsDivider(fullWidth = true)
                         }
-                    }
 
-                    SettingsDivider(fullWidth = true)
+                        // Action bar
+                        ActionPillRow(modifier = Modifier.padding(top = 4.dp)) {
+                            if (!forceExpanded) {
+                                val disableEnableVerb = stringResource(
+                                    if (bundle.enabled) R.string.disable else R.string.enable
+                                )
+                                val disableEnableDesc = disableEnableVerb + " " + bundle.displayTitle
+                                val disableToast = stringResource(
+                                    if (bundle.enabled) R.string.sources_management_source_disabled
+                                    else R.string.sources_management_source_enabled
+                                )
 
-                    // Resolve prerelease state once
-                    val currentUsePrerelease = when (bundle) {
-                        is JsonPatchBundle -> bundle.usePrerelease
-                        is APIPatchBundle -> bundle.usePrerelease
-                        else -> false
-                    }
+                                val disableIcon = if (bundle.enabled)
+                                    Icons.Outlined.Block
+                                else
+                                    Icons.Outlined.CheckCircle
 
-                    // Prerelease toggle (for JsonPatchBundle with GitHub endpoint or APIPatchBundle)
-                    if (onPrereleasesToggle != null) {
-                        ToggleRow(
-                            title = stringResource(R.string.sources_management_prerelease_toggle),
-                            description = stringResource(R.string.sources_management_prerelease_toggle_description),
-                            checked = currentUsePrerelease,
-                            onCheckedChange = onPrereleasesToggle,
-                            enabled = !isUpdating,
-                            isLoading = isUpdating,
-                            showDivider = false,
-                            rowModifier = if (onPrereleaseBtnPositioned != null)
-                                Modifier.onGloballyPositioned { coords -> onPrereleaseBtnPositioned(coords.boundsInWindow()) }
-                            else Modifier
-                        )
-                    }
+                                Crossfade(
+                                    targetState = disableIcon,
+                                    label = "disable_icon"
+                                ) { icon ->
+                                    // Disable button
+                                    ActionPillButton(
+                                        onClick = context.withToast(disableToast, onDisable),
+                                        icon = icon,
+                                        contentDescription = disableEnableDesc,
+                                        tooltip = disableEnableVerb,
+                                        enabled = !isBlocked
+                                    )
+                                }
+                            }
 
-                    // Experimental versions toggle - shown for any bundle type that has experimental app version targets.
-                    // For remote bundles (prerelease supported) it additionally requires prereleases to be ON.
-                    AnimatedVisibility(
-                        visible = hasExperimentalVersions && onExperimentalVersionsToggle != null &&
-                                (onPrereleasesToggle == null || currentUsePrerelease),
-                        enter = Animations.expandFadeEnter,
-                        exit = Animations.shrinkFadeExit
-                    ) {
-                        ToggleRow(
-                            title = stringResource(R.string.sources_management_experimental_versions_toggle),
-                            description = stringResource(R.string.sources_management_experimental_versions_toggle_description),
-                            checked = useExperimentalVersions,
-                            onCheckedChange = { onExperimentalVersionsToggle?.invoke(it) },
-                            showDivider = false
-                        )
-                    }
-
-                    if (onPrereleasesToggle != null || (hasExperimentalVersions && onExperimentalVersionsToggle != null)) {
-                        SettingsDivider(fullWidth = true)
-                    }
-
-                    // Action bar
-                    ActionPillRow(modifier = Modifier.padding(top = 4.dp)) {
-                        if (!forceExpanded) {
-                            val disableEnableVerb = stringResource(
-                                if (bundle.enabled) R.string.disable else R.string.enable
-                            )
-                            val disableEnableDesc = disableEnableVerb + " " + bundle.displayTitle
-                            val disableToast = stringResource(
-                                if (bundle.enabled) R.string.sources_management_source_disabled
-                                else R.string.sources_management_source_enabled
-                            )
-
-                            val disableIcon = if (bundle.enabled)
-                                Icons.Outlined.Block
-                            else
-                                Icons.Outlined.CheckCircle
-
-                            Crossfade(
-                                targetState = disableIcon,
-                                label = "disable_icon"
-                            ) { icon ->
-                                // Disable button
+                            val isLocal = bundle is LocalPatchBundle
+                            if (bundle is RemotePatchBundle || isLocal) {
+                                val updateVerb = stringResource(R.string.update)
+                                val updateDesc = updateVerb + " " + bundle.displayTitle
+                                val updateToast = stringResource(R.string.sources_management_source_updating)
+                                // Update button. A local source has nothing to fetch from, so it asks
+                                // for a replacement file instead and reports progress once one is picked
                                 ActionPillButton(
-                                    onClick = withToast(disableToast, onDisable),
-                                    icon = icon,
-                                    contentDescription = disableEnableDesc,
-                                    tooltip = disableEnableVerb,
+                                    onClick = if (isLocal) onUpdate else context.withToast(updateToast, onUpdate),
+                                    icon = Icons.Outlined.Refresh,
+                                    contentDescription = updateDesc,
+                                    tooltip = updateVerb,
                                     enabled = !isBlocked
                                 )
                             }
-                        }
 
-                        val isLocal = bundle is LocalPatchBundle
-                        if (bundle is RemotePatchBundle || isLocal) {
-                            val updateVerb = stringResource(R.string.update)
-                            val updateDesc = updateVerb + " " + bundle.displayTitle
-                            val updateToast = stringResource(R.string.sources_management_source_updating)
-                            // Update button. A local source has nothing to fetch from, so it asks
-                            // for a replacement file instead and reports progress once one is picked
-                            ActionPillButton(
-                                onClick = if (isLocal) onUpdate else withToast(updateToast, onUpdate),
-                                icon = Icons.Outlined.Refresh,
-                                contentDescription = updateDesc,
-                                tooltip = updateVerb,
-                                enabled = !isBlocked
-                            )
-                        }
-
-                        if (!bundle.isDefault) {
-                            val renameVerb = stringResource(R.string.rename)
-                            val deleteVerb = stringResource(R.string.delete)
-                            val renameDesc = renameVerb + " " + bundle.displayTitle
-                            val deleteDesc = deleteVerb + " " + bundle.displayTitle
-                            // Rename button
-                            ActionPillButton(
-                                onClick = onRename,
-                                icon = Icons.Outlined.Edit,
-                                contentDescription = renameDesc,
-                                tooltip = renameVerb
-                            )
-
-                            // Delete button
-                            ActionPillButton(
-                                onClick = onDelete,
-                                icon = Icons.Outlined.Delete,
-                                contentDescription = deleteDesc,
-                                tooltip = deleteVerb,
-                                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            if (!bundle.isDefault) {
+                                val renameVerb = stringResource(R.string.rename)
+                                val deleteVerb = stringResource(R.string.delete)
+                                val renameDesc = renameVerb + " " + bundle.displayTitle
+                                val deleteDesc = deleteVerb + " " + bundle.displayTitle
+                                // Rename button
+                                ActionPillButton(
+                                    onClick = onRename,
+                                    icon = Icons.Outlined.Edit,
+                                    contentDescription = renameDesc,
+                                    tooltip = renameVerb
                                 )
-                            )
+
+                                // Delete button
+                                ActionPillButton(
+                                    onClick = onDelete,
+                                    icon = Icons.Outlined.Delete,
+                                    contentDescription = deleteDesc,
+                                    tooltip = deleteVerb,
+                                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                )
+                            }
                         }
                     }
                 }
@@ -875,6 +1089,8 @@ private fun BundleCardHeader(
     enabled: Boolean = true,
     metadataFetchError: Throwable? = null,
     blockedInfo: BlocklistRepository.BlockedEntry? = null,
+    patchMatchCount: Int? = null,
+    onShowPatchMatches: (() -> Unit)? = null,
 ) {
     val rotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
@@ -960,11 +1176,28 @@ private fun BundleCardHeader(
 
             Spacer(Modifier.height(2.dp))
 
+            // The badges inside animate their own entry and exit, so animating the row on top of
+            // that only buys a second measure pass per frame while the list is scrolling
             FlowRow(
-                modifier = Modifier.animateContentSize(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
+                // What the search found inside the source leads, being the reason the card is on
+                // screen at all. It swaps in without an animation of its own, since the list
+                // behind it is already re-ordering on every keystroke
+                if (patchMatchCount != null) {
+                    StatusBadge(
+                        text = pluralStringResource(
+                            R.plurals.sources_search_patch_matches,
+                            patchMatchCount,
+                            patchMatchCount.toString()
+                        ),
+                        icon = Icons.Outlined.Search,
+                        tone = SemanticTone.Primary,
+                        onClick = onShowPatchMatches
+                    )
+                }
+
                 // Bundle type badge
                 BundleTypeBadge(bundle.sourceType)
 
@@ -988,6 +1221,18 @@ private fun BundleCardHeader(
                 ) {
                     StatusBadge(
                         text = stringResource(R.string.sources_management_outdated_manager_badge),
+                        tone = SemanticTone.Error
+                    )
+                }
+
+                // Held back badge
+                AnimatedVisibility(
+                    visible = bundle.isHeldBack,
+                    enter = Animations.expandHorizFadeIn,
+                    exit = Animations.shrinkHorizFadeOut
+                ) {
+                    StatusBadge(
+                        text = stringResource(R.string.sources_management_held_back_badge),
                         tone = SemanticTone.Error
                     )
                 }
@@ -1066,7 +1311,7 @@ fun BundleIcon(
             hasBundleError -> MaterialTheme.colorScheme.errorContainer
             hasMetadataError -> Color(0xFFFFF8E1)
             enabled -> MaterialTheme.colorScheme.primaryContainer
-            else -> MaterialTheme.colorScheme.surfaceVariant
+            else -> MaterialTheme.colorScheme.surfaceVariant.distinctFromCard()
         },
         label = "bundle_icon_color"
     )

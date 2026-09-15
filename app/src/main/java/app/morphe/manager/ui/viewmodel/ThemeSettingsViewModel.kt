@@ -8,6 +8,7 @@ import app.morphe.manager.domain.manager.PreferencesManager
 import app.morphe.manager.ui.screen.shared.BackgroundType
 import app.morphe.manager.ui.theme.Theme
 import app.morphe.manager.ui.theme.ThemeStyle
+import app.morphe.manager.ui.theme.coerceToUiScale
 import app.morphe.manager.util.AppCardColorDefaults
 import app.morphe.manager.util.AppCardColorMode
 import app.morphe.manager.util.applyAppLanguage
@@ -48,8 +49,8 @@ class ThemeSettingsViewModel(
      * - [RandomInterval.DAILY] — uses today's epoch day as a stable index.
      * - [RandomInterval.EVERY_3_DAYS] — uses epoch day ÷ 3 as a stable index.
      */
-    fun resolveRandomBackground(interval: RandomInterval) {
-        val pool = BackgroundType.RANDOMIZABLE
+    suspend fun resolveRandomBackground(interval: RandomInterval) {
+        val pool = BackgroundType.randomizable(prefs.matrixBackgroundUnlocked.get())
         _resolvedRandomBackground.value = when (interval) {
             RandomInterval.ON_LAUNCH -> pool.random()
             RandomInterval.DAILY -> {
@@ -109,12 +110,50 @@ class ThemeSettingsViewModel(
         prefs.showGreetingPhrases.update(!current)
     }
 
+    fun toggleShowRepatchNotice(current: Boolean) = viewModelScope.launch {
+        prefs.showRepatchNotice.update(!current)
+    }
+
+    fun toggleGroupPatchesByCategory(current: Boolean) = viewModelScope.launch {
+        prefs.groupPatchesByCategory.update(!current)
+    }
+
     fun setPureBlackTheme(enabled: Boolean) = viewModelScope.launch {
         prefs.pureBlackTheme.update(enabled)
     }
 
     fun setBackgroundType(type: BackgroundType) = viewModelScope.launch {
         prefs.backgroundType.update(type)
+    }
+
+    /**
+     * Takes the red pill: reveals the Matrix background in the picker and switches to it at once,
+     * so the choice is answered by the screen itself rather than by a line in the settings.
+     */
+    fun unlockMatrixBackground() = viewModelScope.launch {
+        prefs.edit {
+            prefs.matrixBackgroundUnlocked.value = true
+            prefs.backgroundType.value = BackgroundType.MATRIX
+        }
+    }
+
+    /**
+     * Takes the blue pill: hides the Matrix background away again. A background picked since is
+     * left alone, and the gesture that revealed it in the first place still works.
+     */
+    fun forgetMatrixBackground() = viewModelScope.launch {
+        prefs.edit {
+            prefs.matrixBackgroundUnlocked.value = false
+            if (prefs.backgroundType.value == BackgroundType.MATRIX) {
+                prefs.backgroundType.value = BackgroundType.DEFAULT
+            }
+        }
+
+        // A random rotation that had already landed on Matrix would keep it on screen until the
+        // next resolve, so it is drawn again from the pool Matrix has just left
+        if (_resolvedRandomBackground.value == BackgroundType.MATRIX) {
+            resolveRandomBackground(prefs.randomBackgroundInterval.get())
+        }
     }
 
     fun toggleBackgroundParallax(current: Boolean) = viewModelScope.launch {
@@ -126,6 +165,10 @@ class ThemeSettingsViewModel(
         if (theme == Theme.LIGHT) {
             prefs.pureBlackTheme.update(false)
         }
+    }
+
+    fun setUiScale(scale: Float) = viewModelScope.launch {
+        prefs.uiScale.update(scale.coerceToUiScale())
     }
 
     fun setThemeStyle(style: ThemeStyle) = viewModelScope.launch {

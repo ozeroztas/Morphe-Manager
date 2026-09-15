@@ -47,16 +47,11 @@ import app.morphe.manager.ui.screen.settings.AdvancedTabContent
 import app.morphe.manager.ui.screen.settings.AppearanceTabContent
 import app.morphe.manager.ui.screen.settings.SystemTabContent
 import app.morphe.manager.ui.screen.settings.system.*
-import app.morphe.manager.ui.screen.shared.GlassButton
-import app.morphe.manager.ui.screen.shared.GlassButtonDefaults
-import app.morphe.manager.ui.screen.shared.ListScrollbar
-import app.morphe.manager.ui.screen.shared.Animations
-import app.morphe.manager.ui.screen.shared.isLandscape
+import app.morphe.manager.ui.screen.shared.*
 import app.morphe.manager.ui.viewmodel.*
 import app.morphe.manager.util.*
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
-import org.koin.core.parameter.parametersOf
 
 /** Settings tabs for bottom navigation. */
 private enum class SettingsTab(
@@ -80,9 +75,6 @@ fun SettingsScreen(
         viewModelStoreOwner = LocalActivity.current as ComponentActivity
     ),
     settingsViewModel: SettingsViewModel = koinViewModel(),
-    updateViewModel: UpdateViewModel = koinViewModel {
-        parametersOf(false)
-    },
     globalOnboardingState: GlobalOnboardingState? = null,
     onStartTour: (() -> Unit)? = null
 ) {
@@ -252,6 +244,10 @@ fun SettingsScreen(
 
     // Manager changelog dialog
     if (showChangelogDialog.value) {
+        // Activity-scoped so this shares the update state and staged download with the home screen
+        val updateViewModel: UpdateViewModel = koinViewModel(
+            viewModelStoreOwner = LocalActivity.current as ComponentActivity
+        )
         ChangelogDialog(
             onDismiss = { showChangelogDialog.value = false },
             updateViewModel = updateViewModel
@@ -472,13 +468,13 @@ private fun LandscapeNavItem(
     Surface(
         onClick = onClick,
         modifier = modifier
-            .height(52.dp)
+            .height(Defaults.TallTouchTarget)
             .semantics {
                 role = Role.Tab
                 selected = isSelected
             },
         color = containerColor,
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(Defaults.CardCornerRadius)
     ) {
         Row(
             modifier = Modifier
@@ -514,9 +510,9 @@ private fun LandscapeNavItem(
 ) {
     Surface(
         onClick = onClick,
-        modifier = modifier.height(52.dp),
+        modifier = modifier.height(Defaults.TallTouchTarget),
         color = Color.Transparent,
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(Defaults.CardCornerRadius)
     ) {
         Row(
             modifier = Modifier
@@ -563,9 +559,12 @@ private fun BottomNavigation(
             modifier = Modifier
                 .widthIn(max = 448.dp)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(
+                    horizontal = Defaults.ContentPadding,
+                    vertical = Defaults.ItemSpacing
+                )
                 .animateContentSize(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(Defaults.ItemSpacing),
             verticalAlignment = Alignment.CenterVertically
         ) {
             SettingsTab.entries.forEach { tab ->
@@ -615,7 +614,6 @@ private fun NavigationItem(
         modifier = modifier,
         containerColor = GlassButtonDefaults.containerColor(isSelected),
         contentColor = GlassButtonDefaults.contentColor(isSelected),
-        shape = RoundedCornerShape(20.dp),
         border = BorderStroke(1.dp, GlassButtonDefaults.borderColor(isSelected)),
         pressScale = true,
         hapticFeedback = true

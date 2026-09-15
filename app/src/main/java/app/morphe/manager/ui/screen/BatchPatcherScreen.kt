@@ -34,15 +34,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.morphe.manager.R
 import app.morphe.manager.domain.batch.*
+import app.morphe.manager.domain.bundles.PatchBundleSource.Extensions.usesPrerelease
 import app.morphe.manager.domain.manager.PreferencesManager
 import app.morphe.manager.domain.repository.PatchBundleRepository
-import app.morphe.manager.ui.screen.home.ApkAvailabilityDialog
-import app.morphe.manager.ui.screen.home.DownloadInstructionsDialog
-import app.morphe.manager.ui.screen.home.ExpertModeDialog
-import app.morphe.manager.ui.screen.home.ExpertPatchActions
-import app.morphe.manager.ui.screen.home.FilePickerPromptDialog
-import app.morphe.manager.ui.screen.home.SimpleBundleCandidate
-import app.morphe.manager.ui.screen.home.SimpleBundleSelectDialog
+import app.morphe.manager.ui.screen.home.*
 import app.morphe.manager.ui.screen.patcher.ExpertPatchingInProgress
 import app.morphe.manager.ui.screen.patcher.PatcherErrorDialog
 import app.morphe.manager.ui.screen.patcher.PatcherErrorInfo
@@ -52,13 +47,7 @@ import app.morphe.manager.ui.screen.settings.system.InstallerFlowDialogs
 import app.morphe.manager.ui.screen.shared.*
 import app.morphe.manager.ui.viewmodel.BatchPatcherViewModel
 import app.morphe.manager.ui.viewmodel.InstallViewModel
-import app.morphe.manager.util.APK_FILE_MIME_TYPES
-import app.morphe.manager.util.APK_MIMETYPE
-import app.morphe.manager.util.ExportNameFormatter
-import app.morphe.manager.util.KnownApps
-import app.morphe.manager.util.PatchedAppExportData
-import app.morphe.manager.util.rememberAdaptiveFilePicker
-import app.morphe.manager.util.toast
+import app.morphe.manager.util.*
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
@@ -71,7 +60,7 @@ import org.koin.compose.koinInject
  */
 @Composable
 fun BatchPatcherScreen(
-    packageNames: List<String>,
+    targets: List<BatchTarget>,
     useMount: Boolean,
     onBackClick: () -> Unit,
     viewModel: BatchPatcherViewModel = koinViewModel(),
@@ -84,8 +73,8 @@ fun BatchPatcherScreen(
     val scope = rememberCoroutineScope()
     val miniGameState = remember { MiniGameState(prefs, scope) }
 
-    LaunchedEffect(packageNames, useMount) {
-        viewModel.ensurePlan(packageNames, useMount)
+    LaunchedEffect(targets, useMount) {
+        viewModel.ensurePlan(targets, useMount)
     }
 
     val openApkPicker = rememberAdaptiveFilePicker(
@@ -103,24 +92,27 @@ fun BatchPatcherScreen(
     val current = state
     // Apps already on the device drop out, so "Install all" means what is left and a card
     // that is done stops offering the button. One list drives both
-    val installRequests: List<InstallQueueRequest> = remember(current?.items) {
+    // Keyed by item rather than by package: an app queued in several cloned copies produces one
+    // request per copy, and they all share the package name they were cloned from
+    val installRequestsByItem: Map<String, InstallQueueRequest> = remember(current?.items) {
         current?.patchedItems.orEmpty().mapNotNull { item ->
             if (item.installOutcome == BatchInstallOutcome.INSTALLED) return@mapNotNull null
             val file = item.patchedFile ?: return@mapNotNull null
-            InstallQueueRequest(
+            item.id to InstallQueueRequest(
                 file = file,
                 originalPackageName = item.packageName,
                 onPersistApp = { packageName, installType ->
                     viewModel.persistInstalled(item, packageName, installType)
                 },
                 onInstalled = { installedPackage ->
-                    viewModel.markInstalled(item.packageName, installedPackage)
+                    viewModel.markInstalled(item.id, installedPackage)
                     onAppStateChanged(installedPackage)
                 },
-                onFailed = { message -> viewModel.markInstallFailed(item.packageName, message) }
+                onFailed = { message -> viewModel.markInstallFailed(item.id, message) }
             )
-        }
+        }.toMap()
     }
+    val installRequests: List<InstallQueueRequest> = installRequestsByItem.values.toList()
 
     LaunchedEffect(current?.phase, current?.policy) {
         if (current?.phase == BatchPhase.FINISHED &&
@@ -152,23 +144,34 @@ fun BatchPatcherScreen(
     }
 
     val useExpertMode by prefs.useExpertMode.getAsState()
+    val apkDownloadHelperEnabled by prefs.useApkDownloadHelper.getAsState()
+
+    // Kept outside the dialog so the picker state survives the download dialog's exit animation
+    val openApkDownloadHelper = rememberApkDownloadHelperAction(
+        host = viewModel,
+        enabled = apkDownloadHelperEnabled && viewModel.apkSearch != null
+    )
 
     // Opened straight from the actions that need it rather than by watching state: the target
     // can repeat, and a repeated value is not an event a keyed effect would fire on again
-    val attachApkTo = { packageName: String ->
-        viewModel.requestAttach(packageName)
+    val attachApkTo = { itemId: String ->
+        viewModel.requestAttach(itemId)
         openApkPicker()
     }
 
     // The same dialog the single-app flow uses, pointed at one queued app instead of the
     // patcher, so the queue never has to grow a second patch list
     viewModel.edit?.let { edit ->
+        // Reading the property re-walks and re-sorts every bundle's patches, so it is taken once
+        val allPatchesInfo = edit.allPatchesInfo
+        val sources by patchBundleRepository.sources.collectAsStateWithLifecycle()
+        val sourcesByUid = remember(sources) { sources.associateBy { it.uid } }
         ExpertModeDialog(
             newPatches = edit.newPatches,
             options = edit.options,
-            allPatchesInfo = edit.allPatchesInfo,
+            allPatchesInfo = allPatchesInfo,
             totalSelectedCount = edit.totalSelectedCount,
-            totalPatchesCount = edit.totalPatchesCount,
+            totalPatchesCount = allPatchesInfo.sumOf { (_, patches) -> patches.size },
             hasMultipleBundles = edit.hasMultipleBundles,
             patchActions = ExpertPatchActions(
                 onPatchToggle = edit::togglePatch,
@@ -176,20 +179,37 @@ fun BatchPatcherScreen(
                 onDeselectAll = edit::deselectAll,
                 onResetToDefault = edit::resetToDefault,
                 onRestoreSaved = edit::restoreSaved,
-                // Copying a selection between sources belongs to the app's own patch dialog,
-                // where it can be saved, rather than to a single queued run
-                onCopyFromBundle = {},
+                onCopyFromBundle = viewModel::openEditCopyDialog,
                 onOptionChange = edit::updateOption,
                 onResetOptions = edit::resetOptions
             ),
             savedPatches = edit.savedSelection,
             lockStateOf = edit::lockStateOf,
+            holdsUniversalPatches = edit::selectAllHoldsUniversal,
+            prereleaseBundleUids = allPatchesInfo.mapNotNull { (bundle, _) ->
+                bundle.uid.takeIf { sourcesByUid[it]?.usesPrerelease == true }
+            }.toSet(),
             proceedText = stringResource(R.string.save),
             // The queue combines sources by design, and the tabs make it plain enough
             warnOnMultipleBundles = false,
             onDismiss = viewModel::cancelEdit,
             onProceed = viewModel::applyEdit
         )
+
+        viewModel.editCopy.targetBundleUid?.let { targetUid ->
+            val targetBundle = edit.bundles.firstOrNull { it.uid == targetUid } ?: return@let
+            CopySelectionFromBundleDialog(
+                target = CopySelectionTarget(
+                    packageName = edit.configurationKey,
+                    bundleUid = targetUid,
+                    bundleName = targetBundle.name,
+                    appDisplayName = edit.appName
+                ),
+                candidates = viewModel.editCopy.candidates,
+                onConfirm = viewModel::applyEditCopy,
+                onDismiss = viewModel.editCopy::close
+            )
+        }
     }
 
     // The single-app flow's own APK question, pointed at a queued app. It carries the version
@@ -199,7 +219,6 @@ fun BatchPatcherScreen(
             appName = choice.item.appName,
             recommendedVersion = choice.recommended,
             compatibleVersions = choice.compatible,
-            recommendedBundleVersions = choice.recommendedByBundle,
             selectedDownloadVersion = choice.selectedVersion,
             onVersionSelect = viewModel::selectApkVersion,
             usingMountInstall = false,
@@ -207,10 +226,11 @@ fun BatchPatcherScreen(
             isExpertMode = useExpertMode,
             savedApkInfo = choice.saved,
             installedApkInfo = choice.installed,
+            installedAppVersion = choice.installedVersion,
             onDismiss = viewModel::cancelApkChoice,
             onHaveApk = {
                 viewModel.cancelApkChoice()
-                attachApkTo(choice.item.packageName)
+                attachApkTo(choice.item.id)
             },
             onNeedApk = { viewModel.beginApkSearch(choice.item, choice.selectedVersion?.version) },
             onUseSaved = { viewModel.useApkSource(preferInstalled = false) },
@@ -226,11 +246,14 @@ fun BatchPatcherScreen(
         val metadata = bundleMetadata[search.item.packageName]
 
         DownloadInstructionsDialog(
+            downloadUrl = search.url,
+            requestedVersion = search.version,
             usingMountInstall = false,
             targetAppInstalled = search.item.source is BatchApkSource.Installed,
             downloadColor = metadata?.downloadColor ?: KnownApps.DEFAULT_DOWNLOAD_COLOR,
             isApkBundle = metadata?.apkFileType?.isApk == false,
-            onDismiss = viewModel::cancelApkSearch
+            onDismiss = viewModel::cancelApkSearch,
+            onOpenApkDownloadHelper = openApkDownloadHelper
         ) {
             viewModel.confirmApkSearch { url ->
                 runCatching { uriHandler.openUri(url) }.isSuccess
@@ -248,7 +271,7 @@ fun BatchPatcherScreen(
             onDismiss = viewModel::dismissAttachPrompt,
             onOpenFilePicker = {
                 viewModel.dismissAttachPrompt()
-                attachApkTo(item.packageName)
+                attachApkTo(item.id)
             },
             onUseInstalledApp = null
         )
@@ -268,7 +291,9 @@ fun BatchPatcherScreen(
                         patchCount = offered[bundle.uid]?.size ?: 0
                     )
                 },
-            onSelect = viewModel::pickSource,
+            // The queue picks a source for the one item it is resolving; what an app is
+            // patched from for good is settled where that question is asked of the app itself
+            onSelect = { uid, _ -> viewModel.pickSource(uid) },
             onDismiss = viewModel::cancelSourcePick
         )
     }
@@ -296,7 +321,7 @@ fun BatchPatcherScreen(
                 null,
                 PatchedAppExportData(
                     appName = item.appName,
-                    packageName = item.packageName,
+                    packageName = item.id,
                     appVersion = item.version,
                     patchBundleVersions = item.bundles.mapNotNull { it.version?.takeIf(String::isNotBlank) },
                     patchBundleNames = item.bundles.map { it.name }
@@ -314,9 +339,11 @@ fun BatchPatcherScreen(
                 appName = item.appName,
                 packageName = item.packageName,
                 appVersion = item.version.orEmpty(),
+                patchCount = item.selection.values.sumOf { it.size },
                 bundles = item.bundles.map {
                     PatcherErrorInfo.BundleInfo(name = it.name, version = null)
-                }
+                },
+                stripsNativeLibs = null
             ),
             onDismiss = { errorItem = null }
         )
@@ -391,7 +418,7 @@ fun BatchPatcherScreen(
         title = stringResource(R.string.batch_patch_title),
         titleTrailingContent = if (current?.phase == BatchPhase.FINISHED && hasUnfinished) {
             {
-                DialogTitleAction(
+                TitleAction(
                     icon = Icons.Outlined.Refresh,
                     contentDescription = stringResource(R.string.retry),
                     onClick = viewModel::retryUnfinished
@@ -411,7 +438,8 @@ fun BatchPatcherScreen(
         },
         scrollable = false,
         padding = DialogPadding.Compact,
-        contentArrangement = Arrangement.Top
+        contentArrangement = Arrangement.Top,
+        fillContentHeight = true
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             LazyColumn(
@@ -432,14 +460,15 @@ fun BatchPatcherScreen(
                     }
                 }
 
-                items(current.items, key = { it.packageName }) { item ->
-                    val request = installRequests.firstOrNull { it.originalPackageName == item.packageName }
+                items(current.items, key = { it.id }) { item ->
+                    val request = installRequestsByItem[item.id]
                     BatchItemCard(
                         item = item,
                         editable = current.phase == BatchPhase.PREFLIGHT,
                         onSelectApk = { viewModel.beginApkChoice(item) },
-                        onToggleExcluded = { viewModel.toggleExcluded(item.packageName) },
-                        onForceVersion = { viewModel.forceVersion(item.packageName) },
+                        onToggleExcluded = { viewModel.toggleExcluded(item.id) },
+                        onForceVersion = { viewModel.forceVersion(item.id) },
+                        onAcceptSignature = { viewModel.acceptUnverifiedSignature(item.id) },
                         // Simple mode never exposes individual patches, and the options edited
                         // here would not be persisted for it. Nothing to choose from until an
                         // APK resolves either, the patch list is scoped to its exact version
@@ -538,7 +567,11 @@ private fun BatchRunHeader(state: BatchRunState) {
             label = "batch_run_counter"
         ) { (processed, total) ->
             Text(
-                text = stringResource(R.string.batch_patch_progress_counter, processed, total),
+                text = stringResource(
+                    R.string.batch_patch_progress_counter,
+                    processed.toString(),
+                    total.toString()
+                ),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -563,15 +596,15 @@ private fun BatchStatusCard(state: BatchRunState) {
     val summary = when (state.phase) {
         BatchPhase.FINISHED -> stringResource(
             R.string.batch_patch_summary,
-            state.succeeded,
-            state.failed,
-            state.skipped
+            state.succeeded.toString(),
+            state.failed.toString(),
+            state.skipped.toString()
         )
 
         else -> pluralStringResource(
             R.plurals.batch_patch_ready_count,
             state.runnable.size,
-            state.runnable.size
+            state.runnable.size.toString()
         )
     }
 
@@ -651,6 +684,7 @@ private fun BatchItemCard(
     onSelectApk: () -> Unit,
     onToggleExcluded: () -> Unit,
     onForceVersion: () -> Unit,
+    onAcceptSignature: () -> Unit,
     onEditPatches: (() -> Unit)? = null,
     onPickSource: (() -> Unit)? = null,
     onInstall: (() -> Unit)? = null,
@@ -673,7 +707,7 @@ private fun BatchItemCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AppIcon(
-                    packageName = item.packageName,
+                    packageName = item.id,
                     contentDescription = null,
                     modifier = Modifier.size(48.dp)
                 )
@@ -717,8 +751,9 @@ private fun BatchItemCard(
                         }
                     }
 
+                    // This entry's own package, which is what tells clones of one app apart
                     Text(
-                        text = item.packageName,
+                        text = item.id,
                         style = MaterialTheme.typography.bodySmall,
                         color = LocalDialogSecondaryTextColor.current,
                         maxLines = 1,
@@ -743,6 +778,21 @@ private fun BatchItemCard(
                         maxLines = if (installFailure != null) Int.MAX_VALUE else 3,
                         overflow = TextOverflow.Ellipsis
                     )
+
+                    // Paths planning left out. The app is patched either way, so this is said
+                    // here rather than held against the item as a state that blocks the run
+                    if (editable && item.unreadableOptionPaths.isNotEmpty()) {
+                        Text(
+                            text = stringResource(
+                                R.string.batch_patch_option_paths_skipped,
+                                item.unreadableOptionPaths.joinToString { it.path }
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
 
@@ -794,6 +844,22 @@ private fun BatchItemCard(
                                 icon = Icons.Outlined.Warning,
                                 contentDescription = forceLabel,
                                 tooltip = forceLabel,
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            )
+                        }
+
+                        if (item.state == BatchItemState.UNVERIFIED_SIGNATURE) {
+                            // The same wording the single-app flow answers this very question with
+                            val acceptLabel =
+                                stringResource(R.string.home_dialog_unsupported_version_dialog_proceed)
+                            ActionPillButton(
+                                onClick = onAcceptSignature,
+                                icon = Icons.Outlined.GppBad,
+                                contentDescription = acceptLabel,
+                                tooltip = acceptLabel,
                                 colors = IconButtonDefaults.filledTonalIconButtonColors(
                                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer
@@ -903,6 +969,8 @@ private fun itemDetails(item: BatchPatchItem): String = when (item.state) {
         item.version.orEmpty()
     )
 
+    BatchItemState.UNVERIFIED_SIGNATURE -> stringResource(R.string.home_invalid_signature_badge)
+
     BatchItemState.FAILED -> item.message ?: stringResource(R.string.patcher_unknown_error)
 
     else -> {
@@ -915,7 +983,7 @@ private fun itemDetails(item: BatchPatchItem): String = when (item.state) {
         val patches = pluralStringResource(
             R.plurals.patch_count,
             item.patchCount,
-            item.patchCount
+            item.patchCount.toString()
         )
         // Only the sources actually contributing patches, so narrowing an app to one source
         // is reflected here instead of still listing everything the plan looked at
@@ -939,6 +1007,8 @@ private fun BatchStateBadge(state: BatchItemState) {
         BatchItemState.EXCLUDED -> R.string.excluded to SemanticTone.Neutral
         BatchItemState.NEEDS_APK -> R.string.batch_patch_state_no_apk to SemanticTone.Error
         BatchItemState.VERSION_MISMATCH -> R.string.version to SemanticTone.Warning
+        BatchItemState.UNVERIFIED_SIGNATURE -> R.string.home_unverified to SemanticTone.Warning
+
         BatchItemState.NO_PATCHES -> R.string.batch_patch_state_no_patches to SemanticTone.Error
     }
     StatusBadge(text = stringResource(labelRes), tone = tone)

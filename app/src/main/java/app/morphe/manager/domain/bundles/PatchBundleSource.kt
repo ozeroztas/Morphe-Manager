@@ -1,7 +1,10 @@
 package app.morphe.manager.domain.bundles
 
 import androidx.compose.runtime.Stable
+import app.morphe.manager.domain.bundles.PatchBundleSource.Extensions.gitlabAvatarUrl
+import app.morphe.manager.domain.repository.PatchBundleHeldBackException
 import app.morphe.manager.patcher.patch.PatchBundle
+import app.morphe.manager.util.hasZipHeader
 import app.morphe.manager.util.isPatcherOutdated
 import java.io.File
 import java.io.IOException
@@ -106,6 +109,13 @@ sealed class PatchBundleSource(
             runCatching { file.delete() }
             throw IOException("$context produced an empty or truncated patch bundle (size=$length)")
         }
+
+        // Patch bundles are zip archives whether they arrive as .mpp or .jar, so a response that
+        // transferred cleanly but is not one must not be installed
+        if (!file.hasZipHeader()) {
+            runCatching { file.delete() }
+            throw IOException("$context produced a file that is not a patch bundle archive")
+        }
     }
 
     sealed interface State {
@@ -120,6 +130,21 @@ sealed class PatchBundleSource(
         private const val JSON_EXTENSION = ".json"
         val PatchBundleSource.isDefault inline get() = uid == 0
         val PatchBundleSource.asRemoteOrNull inline get() = this as? RemotePatchBundle
+
+        /**
+         * True while the source is set to fetch pre-release builds. Only the two remote kinds
+         * carry the flag, so anything else can never be on a pre-release branch.
+         */
+        val PatchBundleSource.usesPrerelease: Boolean
+            get() = (this as? JsonPatchBundle)?.usePrerelease == true ||
+                    (this as? APIPatchBundle)?.usePrerelease == true
+
+        /**
+         * True while the source is skipped because reading it took the process down with it.
+         * Distinct from every other failure in that nothing about the source itself is wrong
+         * yet: it is held back until the file changes.
+         */
+        val PatchBundleSource.isHeldBack: Boolean get() = error is PatchBundleHeldBackException
 
         /** Classifies a [PatchBundleSource] into its user-visible type. */
         val PatchBundleSource.sourceType: BundleSourceType get() = when {

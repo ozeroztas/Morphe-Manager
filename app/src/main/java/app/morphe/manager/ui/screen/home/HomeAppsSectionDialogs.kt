@@ -72,6 +72,18 @@ internal fun HomeAppsSectionDialogs(
         }
     }
 
+    if (state.showPatchSourcesDialog) {
+        AppPatchSourcesDialog(
+            packages = state.selectedPackages.keys.toSet(),
+            // Every tap inside has already been applied, so closing is the end of the task rather
+            // than a step back into picking apps for it
+            onDismiss = {
+                state.showPatchSourcesDialog = false
+                state.exitMultiSelect()
+            }
+        )
+    }
+
     if (state.showMoveCategoryDialog) {
         MoveToCategoryDialog(
             categories = apps.categoryState.categories,
@@ -98,7 +110,7 @@ internal fun HomeAppsSectionDialogs(
             title = pluralStringResource(
                 R.plurals.batch_uninstall_confirm_title,
                 pendingItems.size,
-                pendingItems.size
+                pendingItems.size.toString()
             ),
             message = stringResource(R.string.batch_uninstall_confirm_body),
             primaryText = stringResource(R.string.uninstall),

@@ -18,6 +18,7 @@ const val MANAGER_REPO_URL = "https://github.com/MorpheApp/morphe-manager"
 const val SOURCE_REPO_URL = "https://github.com/MorpheApp/morphe-patches"
 const val MORPHE_API_URL = "https://api.morphe.software"
 const val MORPHE_WEBSITE_URL = "https://morphe.software"
+const val COMMUNITY_PATCHES_URL = "https://morphe-patches.software"
 const val BLOCKED_SOURCES_URL = "$MORPHE_API_URL/v2/blocked-sources"
 
 /** Raw GitHub URL for the stable manager release JSON (main branch) */
@@ -126,6 +127,12 @@ object KnownApps {
  */
 val BATCH_UNINSTALL_TIMEOUT: Duration = 2.minutes
 
+/**
+ * Window used to collect package add, remove and replace broadcasts into a single home refresh.
+ * A store updating several apps emits them in bursts, and each refresh re-inspects tracked apps.
+ */
+const val PACKAGE_CHANGE_DEBOUNCE_MS = 400L
+
 const val APK_MIMETYPE  = "application/vnd.android.package-archive"
 
 const val PLAY_STORE_INSTALLER_PACKAGE = "com.android.vending"
@@ -133,6 +140,10 @@ const val PLAY_STORE_INSTALLER_PACKAGE = "com.android.vending"
 const val AOSP_INSTALLER_PACKAGE        = "com.google.android.packageinstaller"
 const val AOSP_INSTALLER_PACKAGE_LEGACY = "com.android.packageinstaller"
 const val AOSP_INSTALLER_LABEL          = "Package installer"
+
+// Attribution left behind by anything running as the shell user, which is how Shizuku installs
+const val SHELL_INSTALLER_PACKAGE = "com.android.shell"
+
 const val JSON_MIMETYPE     = "application/json"
 const val BIN_MIMETYPE      = "application/octet-stream"
 const val TEXT_MIMETYPE     = "text/plain"

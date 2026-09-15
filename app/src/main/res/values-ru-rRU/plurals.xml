@@ -12,6 +12,24 @@
         <item quantity="many">%s параметры патчей</item>
         <item quantity="other">%s параметры патчей</item>
     </plurals>
+    <plurals name="home_app_patch_sources_title">
+        <item quantity="one">Источники патчей для %s приложения</item>
+        <item quantity="few">Источники патчей для %s приложений</item>
+        <item quantity="many">Источники патчей для %s приложений</item>
+        <item quantity="other">Источники патчей для %s приложений</item>
+    </plurals>
+    <plurals name="expert_mode_hidden_sources_notice">
+        <item quantity="one">%s источник скрыт. Нажмите, чтобы показать</item>
+        <item quantity="few">%s источника скрыты. Нажмите, чтобы показать</item>
+        <item quantity="many">%s источников скрыто. Нажмите, чтобы показать</item>
+        <item quantity="other">%s источников скрыто. Нажмите, чтобы показать</item>
+    </plurals>
+    <plurals name="sources_search_patch_matches">
+        <item quantity="one">%s соответствующий патч</item>
+        <item quantity="few">%s соответствующие патчи</item>
+        <item quantity="many">%s соответствующие патчи</item>
+        <item quantity="other">%s соответствующие патчи</item>
+    </plurals>
     <plurals name="source_count">
         <item quantity="one">%s источник</item>
         <item quantity="few">%s источников</item>
@@ -66,11 +84,11 @@
         <item quantity="many">%s приложений готовы к установке</item>
         <item quantity="other">%s приложений готовы к установке</item>
     </plurals>
-    <plurals name="batch_patch_notification_ready">
-        <item quantity="one">%s приложение готово к установке</item>
-        <item quantity="few">%s приложения готовы к установке</item>
-        <item quantity="many">%s приложений готовы к установке</item>
-        <item quantity="other">%s приложений готовы к установке</item>
+    <plurals name="repatch_available_count">
+        <item quantity="one">%s приложение можно перепатчить</item>
+        <item quantity="few">%s приложения можно перепатчить</item>
+        <item quantity="many">%s приложений можно перепатчить</item>
+        <item quantity="other">%s приложений можно перепатчить</item>
     </plurals>
     <plurals name="batch_skipped_summary">
         <item quantity="one">Пропущено %s приложений</item>
@@ -90,12 +108,6 @@
         <item quantity="many">%s источников установлено</item>
         <item quantity="other">%s источников установлено</item>
     </plurals>
-    <plurals name="patch_selection_total_patches">
-        <item quantity="one">%s патч выбран</item>
-        <item quantity="few">%s патчи выбрано</item>
-        <item quantity="many">%s патчей выбрано</item>
-        <item quantity="other">%s патчей выбрано</item>
-    </plurals>
     <plurals name="home_app_show_hidden_count">
         <item quantity="one">%s скрытое приложение</item>
         <item quantity="few">%s скрытые приложения</item>
@@ -108,10 +120,22 @@
         <item quantity="many">%s приложений</item>
         <item quantity="other">%s приложений</item>
     </plurals>
+    <plurals name="expert_mode_selected_count">
+        <item quantity="one">%s выбран</item>
+        <item quantity="few">%s выбрано</item>
+        <item quantity="many">%s выбрано</item>
+        <item quantity="other">%s выбрано</item>
+    </plurals>
     <plurals name="expert_mode_copy_from_bundle_done">
         <item quantity="one">Скопирован %s патч из выбранного набора</item>
         <item quantity="few">Скопировано %s патча из выбранного набора</item>
         <item quantity="many">Скопировано %s патчей из выбранного набора</item>
         <item quantity="other">Скопировано %s патчей из выбранного набора</item>
+    </plurals>
+    <plurals name="core_count">
+        <item quantity="one">%s ядро</item>
+        <item quantity="few">%s ядра</item>
+        <item quantity="many">%s ядер</item>
+        <item quantity="other">%s ядра</item>
     </plurals>
 </resources>

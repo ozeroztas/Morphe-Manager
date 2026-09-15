@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,7 +30,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -39,11 +39,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import app.morphe.manager.R
+import app.morphe.manager.ui.screen.shared.Defaults.MinTouchTarget
+import app.morphe.manager.ui.screen.shared.Defaults.TallTouchTarget
 import app.morphe.manager.ui.theme.LocalMonochromeTheme
 import app.morphe.manager.ui.theme.MonochromeThemeDefaults
+import app.morphe.manager.util.compositeOver
+import app.morphe.manager.util.isRtl
+import app.morphe.manager.util.readableOn
 
 // Constants
 object Defaults {
@@ -56,6 +60,32 @@ object Defaults {
     val IconSizeSmall = 20.dp
 
     val MinTouchTarget = 48.dp
+
+    /** Roomier than [MinTouchTarget], for rows that carry an action rather than merely allow one. */
+    val TallTouchTarget = 52.dp
+
+    // Button metrics, kept together so the families stay comparable at a glance.
+    // Heights climb with how much the button is meant to carry: a pill sits in a card row,
+    // a glass button is a tab, a dialog button is the action the whole dialog exists for.
+
+    /** Compact pill holding an icon alone. */
+    val PillHeight = 36.dp
+
+    /** Pill that carries a label next to its icon. */
+    val PillHeightLarge = 40.dp
+
+    /** Fully rounded shape shared by the pill buttons. */
+    val PillShape = RoundedCornerShape(50)
+
+    /** Height of a glass tab or toggle. Matches [MinTouchTarget]. */
+    val GlassButtonHeight = MinTouchTarget
+
+    /** Height of a dialog action button. Matches [TallTouchTarget]. */
+    val DialogButtonHeight = TallTouchTarget
+
+    /** Width a centered content column stops at, so a bar under one lines up with its cards. */
+    val ContentMaxWidth = 560.dp
+
     val ContentPaddingSmall = 8.dp
     val ContentPadding = 16.dp
     val ContentPaddingMedium = 24.dp
@@ -301,6 +331,10 @@ fun StatusCircleIcon(
     modifier: Modifier = Modifier,
     size: Dp = 28.dp
 ) {
+    // Callers tint the circle translucent, which leaves the icon on a blend of the tint and the
+    // surface rather than on the container the palette paired it with
+    val tint = contentColor.readableOn(containerColor, MaterialTheme.colorScheme.surface)
+
     Box(
         modifier = modifier
             .size(size)
@@ -311,7 +345,7 @@ fun StatusCircleIcon(
             imageVector = icon,
             contentDescription = null,
             modifier = Modifier.size(size * 0.6f),
-            tint = contentColor
+            tint = tint
         )
     }
 }
@@ -491,7 +525,7 @@ fun ForwardChevronIcon(
     tint: Color = MaterialTheme.colorScheme.primary
 ) {
     ThemedIcon(
-        icon = if (LocalLayoutDirection.current == LayoutDirection.Rtl) {
+        icon = if (isRtl()) {
             Icons.Outlined.ChevronLeft
         } else {
             Icons.Outlined.ChevronRight
@@ -764,6 +798,11 @@ fun HeroInfoCard(
     footer: (@Composable ColumnScope.() -> Unit)? = null,
     subtitle: (@Composable RowScope.() -> Unit)? = null
 ) {
+    val surface = MaterialTheme.colorScheme.surface
+    val cardBackground = containerColor.compositeOver(surface)
+    val accentColor = iconTint.readableOn(containerColor, surface)
+    val iconColor = iconTint.readableOn(iconContainerColor, cardBackground)
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(Defaults.SectionCornerRadius),
@@ -789,7 +828,7 @@ fun HeroInfoCard(
                         Icon(
                             imageVector = icon,
                             contentDescription = null,
-                            tint = iconTint,
+                            tint = iconColor,
                             modifier = Modifier.size(28.dp)
                         )
                     }
@@ -814,11 +853,13 @@ fun HeroInfoCard(
                         )
                     }
                     if (subtitle != null) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            content = subtitle
-                        )
+                        CompositionLocalProvider(LocalContentColor provides accentColor) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                content = subtitle
+                            )
+                        }
                     }
                 }
             }
