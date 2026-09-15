@@ -1,6 +1,8 @@
 name: Crowdin pull and merge
 
 on:
+  schedule:
+    - cron: "0 */12 * * *" # every 12 hours
   workflow_dispatch:
 
 jobs:
@@ -11,14 +13,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout dev
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: dev
           fetch-depth: 0
           clean: true
 
+      - name: Reset Crowdin branch
+        run: git push origin dev:crowdin --force
+
       - name: Pull strings from Crowdin
-        uses: crowdin/github-action@v2
+        uses: crowdin/github-action@v3
         with:
           config: crowdin.yml
           upload_sources: false
@@ -39,8 +44,9 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout crowdin branch
-        uses: actions/checkout@v6
+      # Step 1: Checkout Crowdin branch to run checks on it
+      - name: Checkout Crowdin branch
+        uses: actions/checkout@v7
         with:
           ref: crowdin
           fetch-depth: 0
@@ -49,6 +55,7 @@ jobs:
       - name: Cache Gradle
         uses: burrunan/gradle-cache-action@v3
 
+      # Step 2: Compile Android app to check string resources
       - name: Compile Android app to check resources
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -57,16 +64,19 @@ jobs:
           chmod +x ./gradlew
           ./gradlew :app:assembleDebug -PnoProguard -PsignAsDebug
 
+      # Step 3: Checkout dev branch to prepare for merging
       - name: Checkout dev branch for merge
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: dev
           fetch-depth: 0
           clean: true
 
+      # Step 4: Fetch the latest crowdin branch (already checked)
       - name: Fetch crowdin branch
         run: git fetch origin crowdin
 
+      # Step 5: Squash merge crowdin into dev
       - name: Squash merge crowdin into dev
         run: |
           git config --local user.name "Crowdin Bot"
