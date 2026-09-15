@@ -11,17 +11,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout dev
-        uses: actions/checkout@v7
+        uses: actions/checkout@v6
         with:
           ref: dev
           fetch-depth: 0
           clean: true
 
-      - name: Reset Crowdin branch
-        run: git push origin dev:crowdin --force
-
       - name: Pull strings from Crowdin
-        uses: crowdin/github-action@v3
+        uses: crowdin/github-action@v2
         with:
           config: crowdin.yml
           upload_sources: false
@@ -42,9 +39,8 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     steps:
-      # Step 1: Checkout Crowdin branch to run checks on it
-      - name: Checkout Crowdin branch
-        uses: actions/checkout@v7
+      - name: Checkout crowdin branch
+        uses: actions/checkout@v6
         with:
           ref: crowdin
           fetch-depth: 0
@@ -62,7 +58,7 @@ jobs:
           ./gradlew :app:assembleDebug -PnoProguard -PsignAsDebug
 
       - name: Checkout dev branch for merge
-        uses: actions/checkout@v7
+        uses: actions/checkout@v6
         with:
           ref: dev
           fetch-depth: 0
