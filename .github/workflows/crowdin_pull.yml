@@ -6,8 +6,32 @@ on:
   workflow_dispatch:
 
 jobs:
+  configuration:
+    name: Check Crowdin configuration
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - name: Check required secrets
+        id: check
+        shell: bash
+        env:
+          CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
+          CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
+        run: |
+          if [[ -n "$CROWDIN_PROJECT_ID" && -n "$CROWDIN_PERSONAL_TOKEN" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "### Crowdin sync skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo 'Configure both repository Actions secrets, `CROWDIN_PROJECT_ID` and `CROWDIN_PERSONAL_TOKEN`, to enable translation syncing.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   pull:
     name: Pull translations from Crowdin
+    needs: configuration
+    if: needs.configuration.outputs.configured == 'true'
     permissions:
       contents: write
     runs-on: ubuntu-latest
