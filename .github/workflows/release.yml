@@ -12,8 +12,44 @@ on:
       - main
 
 jobs:
+  configuration:
+    name: Check release configuration
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - name: Check required signing secrets
+        id: check
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_ENTRY_ALIAS: ${{ secrets.KEYSTORE_ENTRY_ALIAS }}
+          KEYSTORE_ENTRY_PASSWORD: ${{ secrets.KEYSTORE_ENTRY_PASSWORD }}
+        run: |
+          missing=()
+          for name in GPG_PRIVATE_KEY KEYSTORE_B64 KEYSTORE_PASSWORD KEYSTORE_ENTRY_ALIAS KEYSTORE_ENTRY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} == 0 )); then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Release skipped: signing secrets are missing"
+              echo "Configure these repository Actions secrets to enable signed releases:"
+              printf '\n- `%s`\n' "${missing[@]}"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   release:
     name: Release
+    needs: configuration
+    if: needs.configuration.outputs.configured == 'true'
     permissions:
       contents: write
       packages: write
