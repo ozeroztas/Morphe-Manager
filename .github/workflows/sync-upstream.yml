@@ -3,13 +3,16 @@ name: Sync upstream
 on:
   workflow_dispatch:
 
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
 jobs:
   sync:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -19,46 +22,43 @@ jobs:
           token: ${{ secrets.SYNC_TOKEN || github.token }}
 
       - name: Sync Morphe Manager
-        env:
-          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        shell: bash
         run: |
           set -euo pipefail
-
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git fetch origin main --tags --force
           git reset --hard origin/main
+          local_head=$(git rev-parse HEAD)
 
           if git remote get-url upstream >/dev/null 2>&1; then
             git remote set-url upstream https://github.com/MorpheApp/morphe-manager.git
           else
             git remote add upstream https://github.com/MorpheApp/morphe-manager.git
           fi
-
           git fetch upstream main --tags --force
-          git merge upstream/main --no-edit -X theirs
+          upstream_head=$(git rev-parse upstream/main)
+          git merge "$upstream_head" --no-edit -X theirs
 
-          # Keep only this fork-specific manual sync workflow.
-          git checkout ORIG_HEAD -- .github/workflows/sync-upstream.yml
-          git add .github/workflows/sync-upstream.yml
-
+          # Preserve this repository's sync workflow and missing-secret guards.
+          git restore --source="$local_head" --staged --worktree -- \
+            .github/workflows/sync-upstream.yml \
+            .github/workflows/crowdin_pull.yml \
+            .github/workflows/release.yml
           if ! git diff --cached --quiet; then
-            git commit --no-edit -m "Sync upstream"
-            if [[ -n "${SYNC_TOKEN:-}" ]]; then
-              git push "https://x-access-token:${SYNC_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" main
-            else
-              git push origin main
-            fi
+            git commit -m "chore: preserve local workflow configuration"
           fi
 
-          echo "Pushing upstream tags..."
-
-          if [[ -n "${SYNC_TOKEN:-}" ]]; then
-            git remote set-url origin "https://x-access-token:${SYNC_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          else
-            echo "SYNC_TOKEN is not configured; using GITHUB_TOKEN. If upstream changes workflow files, GitHub may reject the push."
-          fi
-
+          # Merge may already have committed everything. Always push main.
+          git push origin HEAD:main
           git push origin --tags --force
-          echo "Main and upstream tags synchronized successfully (sync-upstream.yml preserved)."
+
+          # Verify the published branch actually includes the fetched upstream.
+          git fetch origin main
+          git merge-base --is-ancestor "$upstream_head" origin/main
+          {
+            echo "### Upstream sync verified"
+            echo "Published upstream commit: $upstream_head"
+            echo "Local sync, Crowdin and Release workflow configuration preserved."
+          } >> "$GITHUB_STEP_SUMMARY"
