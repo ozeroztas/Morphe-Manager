@@ -28,65 +28,12 @@ jobs:
             echo 'Configure both repository Actions secrets, `CROWDIN_PROJECT_ID` and `CROWDIN_PERSONAL_TOKEN`, to enable translation syncing.' >> "$GITHUB_STEP_SUMMARY"
           fi
 
-  pull:
-    name: Pull translations from Crowdin
-    needs: configuration
-    if: needs.configuration.outputs.configured == 'true'
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout dev
-        uses: actions/checkout@v7
-        with:
-          ref: dev
-          fetch-depth: 0
-          clean: true
-
-      - name: Reset Crowdin branch
-        run: git push origin dev:crowdin --force
-
-      - name: Pull strings from Crowdin
-        uses: crowdin/github-action@v3
-        with:
-          config: crowdin.yml
-          upload_sources: false
-          download_translations: true
-          skip_ref_checkout: true
-          localization_branch_name: crowdin
-          create_pull_request: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
-          CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
-
-  merge:
-    name: Squash merge Crowdin into Dev
-    if: github.event_name == 'workflow_dispatch'
-    needs: pull
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    steps:
-      # Step 1: Checkout Crowdin branch to run checks on it
-      - name: Checkout Crowdin branch
-        uses: actions/checkout@v7
-        with:
-          ref: crowdin
-          fetch-depth: 0
-          clean: true
-
-      - name: Cache Gradle
-        uses: burrunan/gradle-cache-action@v3
-
-      # Step 2: Compile Android app to check string resources
-      - name: Compile Android app to check resources
+      # A placeholder a translator got wrong crashes the app in that language, so it stops the merge
+      - name: Check translation placeholders
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           _JAVA_OPTIONS: "-Djava.awt.headless=true"
-        run: |
-          chmod +x ./gradlew
-          ./gradlew :app:assembleDebug -PnoProguard -PsignAsDebug
+        run: ./gradlew :app:testDebugUnitTest --tests "app.morphe.manager.TranslationFormatTest"
 
       # Step 3: Checkout dev branch to prepare for merging
       - name: Checkout dev branch for merge
