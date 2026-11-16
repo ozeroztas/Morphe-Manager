@@ -57,7 +57,7 @@ jobs:
           declare -A remote_tag_oids=()
           while IFS=$'\t' read -r oid ref; do
             remote_tag_oids["${ref#refs/tags/}"]="$oid"
-          done < <(git ls-remote --tags origin | awk '$2 !~ /\\^\\{\\}$/ {print $1 "\t" $2}')
+          done < <(git ls-remote --tags origin | awk 'substr($2, length($2)-2) != "^{}" {print $1 "\t" $2}')
 
           tag_failures=0
           tag_updates=0
