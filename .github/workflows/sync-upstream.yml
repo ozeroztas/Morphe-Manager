@@ -51,7 +51,19 @@ jobs:
 
           # Merge may already have committed everything. Always push main.
           git push origin HEAD:main
-          git push origin --tags --force
+
+          # Push tags individually: GitHub's GITHUB_TOKEN cannot update refs
+          # whose tagged commits modify .github/workflows/*. A rejected tag
+          # must not fail the entire upstream sync.
+          tag_failures=0
+          while IFS= read -r tag; do
+            if ! git push origin "refs/tags/$tag:refs/tags/$tag" --force; then
+              echo "::warning::Could not publish tag $tag. It may reference workflow-file changes and require a PAT with workflow scope."
+              tag_failures=$((tag_failures + 1))
+            fi
+          done < <(git tag --list)
+
+          # Verify the published branch actually includes the fetched upstream.
 
           # Verify the published branch actually includes the fetched upstream.
           git fetch origin main
@@ -60,4 +72,5 @@ jobs:
             echo "### Upstream sync verified"
             echo "Published upstream commit: $upstream_head"
             echo "Local sync, Crowdin and Release workflow configuration preserved."
+            echo "Tags rejected by GitHub permissions: $tag_failures"
           } >> "$GITHUB_STEP_SUMMARY"
