@@ -64,8 +64,6 @@ jobs:
           done < <(git tag --list)
 
           # Verify the published branch actually includes the fetched upstream.
-
-          # Verify the published branch actually includes the fetched upstream.
           git fetch origin main
           git merge-base --is-ancestor "$upstream_head" origin/main
           {
