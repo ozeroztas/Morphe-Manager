@@ -41,10 +41,9 @@ jobs:
           git merge "$upstream_head" --no-edit -X theirs
 
           # Preserve this repository's sync workflow and missing-secret guards.
-          git restore --source="$local_head" --staged --worktree -- \
-            .github/workflows/sync-upstream.yml \
-            .github/workflows/crowdin_pull.yml \
-            .github/workflows/release.yml
+          # Keep every fork-owned workflow intact. Upstream workflow changes
+          # require the separate Workflows permission, which this sync token lacks.
+          git restore --source="$local_head" --staged --worktree -- .github/workflows/
           if ! git diff --cached --quiet; then
             git commit -m "chore: preserve local workflow configuration"
           fi
