@@ -38,11 +38,32 @@ jobs:
           fi
           git fetch upstream main --tags --force
           upstream_head=$(git rev-parse upstream/main)
-          git merge "$upstream_head" --no-edit -X theirs
 
-          # Preserve this repository's sync workflow and missing-secret guards.
-          # Keep every fork-owned workflow intact. Upstream workflow changes
-          # require the separate Workflows permission, which this sync token lacks.
+          # A modify/delete conflict can still occur in workflows even with
+          # -X theirs. Resolve workflow-only conflicts in favor of this fork;
+          # never hide conflicts in application/source files.
+          if ! git merge "$upstream_head" --no-edit -X theirs; then
+            unresolved=$(git diff --name-only --diff-filter=U)
+            if [[ -z "$unresolved" ]]; then
+              echo "::error::Upstream merge failed without a resolvable conflict list."
+              exit 1
+            fi
+
+            unexpected=$(printf '%s\n' "$unresolved" | grep -Ev '^\.github/workflows/' || true)
+            if [[ -n "$unexpected" ]]; then
+              echo "::error::Unresolved upstream conflicts outside .github/workflows/:"
+              printf '%s\n' "$unexpected"
+              exit 1
+            fi
+
+            # Restore the fork's workflow tree in the index and working tree,
+            # which also resolves upstream modify/delete conflicts.
+            git restore --source="$local_head" --staged --worktree -- .github/workflows/
+            git add -A -- .github/workflows/
+            git commit -m "Merge upstream Morphe Manager"
+          fi
+
+          # Preserve all fork-owned workflows, including deleted local files.
           git restore --source="$local_head" --staged --worktree -- .github/workflows/
           if ! git diff --cached --quiet; then
             git commit -m "chore: preserve local workflow configuration"
