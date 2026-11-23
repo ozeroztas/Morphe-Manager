@@ -56,9 +56,10 @@ jobs:
               exit 1
             fi
 
-            # Restore the fork's workflow tree in the index and working tree,
-            # which also resolves upstream modify/delete conflicts.
-            git restore --source="$local_head" --staged --worktree -- .github/workflows/
+            # Clear conflicted workflow entries first; restore the fork's
+            # exact workflow tree afterward (including intentionally deleted files).
+            git rm -r -f --ignore-unmatch -- .github/workflows/
+            git checkout "$local_head" -- .github/workflows/
             git add -A -- .github/workflows/
             git commit -m "Merge upstream Morphe Manager"
           fi
